@@ -30,8 +30,11 @@ TypeScript, GitHub App, benchmark, website. Do not start them.
 ## Progress
 - [x] 1. inventory — deleted, renamed-away, newly skipped tests (6 fixtures, all passing)
       Not yet: xfail markers, pytest.skip() inside a test body, edited parametrize values.
-- [ ] 2. astdiff  ← current
-- [ ] 3. rules
+- [x] 2. astdiff — assertion removed / weakened / guarded, skip_in_body,
+      expected_value_changed (13 fixtures, all passing)
+      Not yet: unittest-style asserts, for/while/with guards, positional approx tolerances,
+      custom python_files patterns; "source changed" is repo-wide, not per import.
+- [ ] 3. rules  ← current
 - [ ] 4. ledger
 - [ ] 5. receipt
 - [ ] 6. CLI commands

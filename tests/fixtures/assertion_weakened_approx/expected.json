@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 11,
+    "line_end": 11,
+    "before": "assert divide(10, 4) == pytest.approx(2.5, abs=1e-6)",
+    "after": "assert divide(10, 4) == pytest.approx(2.5, abs=1)",
+    "detector": "ast"
+  }
+]

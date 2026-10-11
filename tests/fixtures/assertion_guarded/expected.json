@@ -1,0 +1,24 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 5,
+    "line_end": 6,
+    "before": "assert add(2, 3) == 5",
+    "after": "if add(2, 3) is not None:\n    assert add(2, 3) == 5",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 10,
+    "line_end": 13,
+    "before": "assert divide(10, 2) == 5",
+    "after": "try:\n    assert divide(10, 2) == 5\nexcept AssertionError:\n    pass",
+    "detector": "ast"
+  }
+]

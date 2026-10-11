@@ -1,12 +1,11 @@
 import ast
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from engine.inventory._plugin import FunctionNode, fingerprint, first_line
 from engine.inventory.collect import Item, collect
-from engine.models import SnitchEvent
+from engine.models import SnitchEvent, new_event
 
 SKIP_MARKERS = {"skip", "skipif"}
 
@@ -52,15 +51,11 @@ def diff_inventory(
         before_text: str | None,
         after_text: str | None,
     ) -> SnitchEvent:
-        return SnitchEvent(
-            # stable across re-runs so the ledger can dedupe
-            id=hashlib.sha1(f"{session_id}:{pattern}:{nodeid}".encode()).hexdigest()[
-                :16
-            ],
+        return new_event(
             session_id=session_id,
             family=family,
             pattern=pattern,
-            severity="high",
+            nodeid=nodeid,
             file=file,
             line_start=line_start,
             line_end=line_end,
