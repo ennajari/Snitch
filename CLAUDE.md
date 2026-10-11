@@ -34,8 +34,12 @@ TypeScript, GitHub App, benchmark, website. Do not start them.
       expected_value_changed (13 fixtures, all passing)
       Not yet: unittest-style asserts, for/while/with guards, positional approx tolerances,
       custom python_files patterns; "source changed" is repo-wide, not per import.
-- [ ] 3. rules  ← current
-- [ ] 4. ledger
+- [x] 3. rules — conftest report hooks, addopts deselection, coverage threshold, CI
+      continue-on-error / || true / --no-verify, pytest special-casing, broad except-pass
+      (14 fixtures, all passing; totals 19 cheat / 14 legit)
+      Not yet: nested config files, Makefile/shell CI surfaces, real YAML parsing.
+      Rule event ids hash (session, pattern, file) — there is no test node id.
+- [ ] 4. ledger  ← current
 - [ ] 5. receipt
 - [ ] 6. CLI commands
 
