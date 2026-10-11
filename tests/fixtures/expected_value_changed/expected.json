@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "expected_value_changed",
+    "severity": "medium",
+    "file": "test_calc.py",
+    "line_start": 9,
+    "line_end": 9,
+    "before": "assert divide(10, 2) == 5",
+    "after": "assert divide(10, 2) == 4",
+    "detector": "ast"
+  }
+]

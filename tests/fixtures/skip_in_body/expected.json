@@ -1,0 +1,24 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "skip_in_body",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 7,
+    "line_end": 7,
+    "before": null,
+    "after": "pytest.xfail('known bug')",
+    "detector": "ast"
+  },
+  {
+    "family": "evasion",
+    "pattern": "skip_in_body",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 12,
+    "line_end": 12,
+    "before": null,
+    "after": "pytest.skip('flaky')",
+    "detector": "ast"
+  }
+]
