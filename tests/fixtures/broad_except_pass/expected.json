@@ -1,0 +1,13 @@
+[
+  {
+    "family": "hollow",
+    "pattern": "broad_except_pass",
+    "severity": "medium",
+    "file": "calc.py",
+    "line_start": 8,
+    "line_end": 9,
+    "before": null,
+    "after": "except Exception:\n    pass",
+    "detector": "rule"
+  }
+]

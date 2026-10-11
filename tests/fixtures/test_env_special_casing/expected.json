@@ -1,0 +1,13 @@
+[
+  {
+    "family": "faking",
+    "pattern": "test_env_special_casing",
+    "severity": "high",
+    "file": "calc.py",
+    "line_start": 9,
+    "line_end": 9,
+    "before": null,
+    "after": "if \"PYTEST_CURRENT_TEST\" in os.environ:",
+    "detector": "rule"
+  }
+]

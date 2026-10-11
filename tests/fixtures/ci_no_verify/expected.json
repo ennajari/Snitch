@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "ci_no_verify",
+    "severity": "high",
+    "file": ".github/workflows/ci.yml",
+    "line_start": 10,
+    "line_end": 10,
+    "before": null,
+    "after": "- run: git commit -am wip --no-verify",
+    "detector": "rule"
+  }
+]
