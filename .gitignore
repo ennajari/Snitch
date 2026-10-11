@@ -12,3 +12,4 @@ build/
 node_modules/
 skills-lock.json
 graphify-out/
+.mypy_cache/
