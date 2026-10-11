@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "conftest_report_hook",
+    "severity": "high",
+    "file": "conftest.py",
+    "line_start": 4,
+    "line_end": 8,
+    "before": null,
+    "after": "pytest_runtest_makereport",
+    "detector": "rule"
+  }
+]

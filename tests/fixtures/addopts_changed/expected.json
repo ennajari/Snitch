@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "addopts_changed",
+    "severity": "medium",
+    "file": "pytest.ini",
+    "line_start": 2,
+    "line_end": 2,
+    "before": "-ra",
+    "after": "-ra -k \"not divide\"",
+    "detector": "rule"
+  }
+]

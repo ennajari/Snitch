@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "ci_or_true",
+    "severity": "high",
+    "file": ".github/workflows/ci.yml",
+    "line_start": 9,
+    "line_end": 9,
+    "before": null,
+    "after": "- run: pytest -q || true",
+    "detector": "rule"
+  }
+]

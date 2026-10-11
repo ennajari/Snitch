@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "ci_continue_on_error",
+    "severity": "high",
+    "file": ".github/workflows/ci.yml",
+    "line_start": 10,
+    "line_end": 10,
+    "before": null,
+    "after": "continue-on-error: true",
+    "detector": "rule"
+  }
+]
