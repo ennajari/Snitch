@@ -1,0 +1,42 @@
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from engine.inventory import diff_inventory
+
+FIXTURES = Path(__file__).parent / "fixtures"
+COMPARED = {
+    "family",
+    "pattern",
+    "severity",
+    "file",
+    "line_start",
+    "line_end",
+    "before",
+    "after",
+    "detector",
+}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_deleted",
+        "test_skipped",
+        "test_renamed_away",
+        "legit_test_renamed",
+        "legit_test_moved",
+        "legit_skip_unchanged",
+    ],
+)
+def test_inventory_fixture(name: str, tmp_path: Path) -> None:
+    # Copy out of the repo so collection ignores our own pytest config and leaves no caches.
+    before = shutil.copytree(FIXTURES / name / "before", tmp_path / "before")
+    after = shutil.copytree(FIXTURES / name / "after", tmp_path / "after")
+    expected = json.loads((FIXTURES / name / "expected.json").read_text())
+
+    events = [e.model_dump(include=COMPARED) for e in diff_inventory(before, after)]
+
+    assert events == expected
