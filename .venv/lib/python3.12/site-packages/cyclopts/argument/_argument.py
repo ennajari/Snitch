@@ -1,0 +1,1551 @@
+"""Argument class and related functionality."""
+
+import inspect
+import json
+import operator
+import re
+import sys
+from collections.abc import Callable, Sequence
+from contextlib import suppress
+from functools import partial, reduce
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
+
+from attrs import define, field
+
+from cyclopts._convert import (
+    _validate_json_extra_keys,
+    convert,
+    create_empty_instance,
+    instantiate_from_dict,
+    token_count,
+)
+from cyclopts.annotations import (
+    ITERABLE_TYPES,
+    contains_enum,
+    contains_hint,
+    get_annotated_discriminator,
+    get_choices_from_hint,
+    get_hint_name,
+    is_attrs,
+    is_dataclass,
+    is_enum_flag,
+    is_namedtuple,
+    is_nonetype,
+    is_pydantic,
+    is_typeddict,
+    is_union,
+    resolve,
+    resolve_annotated,
+    resolve_optional,
+)
+from cyclopts.exceptions import (
+    CoercionError,
+    CycloptsError,
+    MissingArgumentError,
+    MixedArgumentError,
+    RepeatArgumentError,
+    ValidationError,
+)
+from cyclopts.field_info import (
+    FieldInfo,
+    _attrs_field_infos,
+    _generic_class_field_infos,
+    _pydantic_field_infos,
+    _typed_dict_field_infos,
+    get_field_infos,
+    signature_parameters,
+)
+from cyclopts.parameter import ITERATIVE_BOOL_IMPLICIT_VALUE, Parameter
+from cyclopts.token import Token
+from cyclopts.utils import UNSET, grouper, is_builtin, parse_version
+
+from .utils import (
+    enum_flag_from_dict,
+    missing_keys_factory,
+    startswith,
+)
+
+if TYPE_CHECKING:
+    from cyclopts.argument._collection import ArgumentCollection
+
+_CHOICES_UNSUPPORTED = (
+    "Parameter(choices=...) only supports single-token value types (not flags, multi-token tuples, "
+    "or keyword-accepting classes); got {hint}. Annotate the individual fields instead."
+)
+
+
+@define(kw_only=True)
+class Argument:
+    """Encapsulates functionality and additional contextual information for parsing a parameter.
+
+    An argument is defined as anything that would have its own entry in the help page.
+    """
+
+    tokens: list[Token] = field(factory=list)
+    """
+    List of :class:`.Token` parsed from various sources.
+    Do not directly mutate; see :meth:`append`.
+    """
+
+    field_info: FieldInfo = field(factory=FieldInfo)
+    """
+    Additional information about the parameter from surrounding python syntax.
+    """
+
+    parameter: Parameter = field(factory=Parameter)
+    """
+    Fully resolved user-provided :class:`.Parameter`.
+    """
+
+    hint: Any = field(default=str, converter=partial(resolve, optional=False))
+    """
+    The type hint for this argument; may be different from :attr:`.FieldInfo.annotation`.
+    Annotated wrappers are stripped, but Optional is preserved for none-coercion.
+    """
+
+    index: int | None = field(default=None)
+    """
+    Associated python positional index for argument.
+    If ``None``, then cannot be assigned positionally.
+    """
+
+    keys: tuple[str, ...] = field(default=())
+    """
+    **Python** keys that lead to this leaf.
+
+    ``self.parameter.name`` and ``self.keys`` can naively disagree!
+    For example, a ``self.parameter.name="--foo.bar.baz"`` could be aliased to "--fizz".
+    The resulting ``self.keys`` would be ``("bar", "baz")``.
+
+    This is populated based on type-hints and class-structure, not ``Parameter.name``.
+
+    .. code-block:: python
+
+        from cyclopts import App, Parameter
+        from dataclasses import dataclass
+        from typing import Annotated
+
+        app = App()
+
+
+        @dataclass
+        class User:
+            id: int
+            name: Annotated[str, Parameter(name="--fullname")]
+
+
+        @app.default
+        def main(user: User):
+            pass
+
+
+        for argument in app.assemble_argument_collection():
+            print(f"name: {argument.name:16} hint: {str(argument.hint):16} keys: {str(argument.keys)}")
+
+    .. code-block:: bash
+
+        $ my-script
+        name: --user.id        hint: <class 'int'>    keys: ('id',)
+        name: --fullname       hint: <class 'str'>    keys: ('name',)
+    """
+
+    _value: Any = field(alias="value", default=UNSET)
+    """
+    Converted value from last :meth:`convert` call.
+    This value may be stale if fields have changed since last :meth:`convert` call.
+    :class:`.UNSET` if :meth:`convert` has not yet been called with tokens.
+    """
+
+    _accepts_keywords: bool = field(default=False, init=False, repr=False)
+
+    _default: Any = field(default=None, init=False, repr=False)
+    _lookup: dict[str, FieldInfo] = field(factory=dict, init=False, repr=False)
+
+    children: "ArgumentCollection" = field(init=False, repr=False)
+    """
+    Collection of other :class:`Argument` that eventually culminate into the python variable represented by :attr:`field_info`.
+    """
+
+    _marked_converted: bool = field(default=False, init=False, repr=False)
+    _mark_converted_override: bool = field(default=False, init=False, repr=False)
+
+    _missing_keys_checker: Callable | None = field(default=None, init=False, repr=False)
+
+    _internal_converter: Callable | None = field(default=None, init=False, repr=False)
+
+    _enum_flag_type: Any | None = field(default=None, init=False, repr=False)
+
+    _union_branches: "list[tuple[Any, dict[str, FieldInfo]]]" = field(factory=list, init=False, repr=False)
+    """Per-branch ``(member_type, field_infos)`` when :attr:`hint` is a ``Union`` of 2+ keyword-accepting types.
+
+    Empty for non-unions and single-composite optionals (e.g. ``Foo | None``). Drives
+    branch-aware required-field detection so that supplying one ``Union`` member's fields
+    doesn't demand another member's required fields, and selects the member to instantiate.
+    See :meth:`_active_branch_required_keys` and :meth:`_resolve_union_member`.
+    """
+
+    def __attrs_post_init__(self):
+        from cyclopts.argument._collection import ArgumentCollection
+
+        self.children = ArgumentCollection()
+
+        hint = self.resolved_hint
+        hints = get_args(hint) if is_union(hint) else (hint,)
+
+        if self.parameter.count:
+            # Perform type-annotation validation.
+            # Technically, bool is a subclass of int, so we need to explicitly check.
+            if hint is bool or not (hint is int or (isinstance(hint, type) and issubclass(hint, int))):
+                raise ValueError(
+                    f"Parameter(count=True) requires an int type hint, got {self.hint}. "
+                    f"Use 'Annotated[int, Parameter(count=True)]' for counting flags."
+                )
+
+        if self.parameter.requires_equals and self.parameter.consume_multiple:
+            raise ValueError(
+                "Parameter(requires_equals=True) and Parameter(consume_multiple=...) cannot be used together. "
+                "requires_equals enforces '--option=value' syntax, which is incompatible with "
+                "consume_multiple's space-separated value consumption."
+            )
+
+        if not self.parse:
+            # Validate that non-parsed parameters are keyword-only or have defaults
+            is_keyword_only = self.field_info.kind is self.field_info.KEYWORD_ONLY
+            has_default = self.field_info.default is not self.field_info.empty
+            if not (is_keyword_only or has_default):
+                raise ValueError(
+                    f"Non-parsed parameter '{self.field_info.name}' must be a KEYWORD_ONLY function parameter "
+                    "or have a default value."
+                )
+            return
+
+        if self.parameter.choices and self.token_count()[0] != 1:
+            raise ValueError(_CHOICES_UNSUPPORTED.format(hint=self.hint))
+
+        if self.parameter.accepts_keys is False:
+            return
+
+        for hint in hints:
+            origin = get_origin(hint)
+            hint_origin = {hint, origin}
+
+            field_infos = get_field_infos(hint)
+            if dict in hint_origin:
+                self._accepts_keywords = True
+                key_type, val_type = str, str
+                args = get_args(hint)
+                with suppress(IndexError):
+                    key_type = args[0]
+                    val_type = args[1]
+                if key_type is not str:
+                    raise TypeError('Dictionary type annotations must have "str" keys.')
+                self._default = val_type
+            elif is_typeddict(hint):
+                self._missing_keys_checker = missing_keys_factory(_typed_dict_field_infos)
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif is_dataclass(hint):
+                self._missing_keys_checker = missing_keys_factory(_generic_class_field_infos)
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif is_namedtuple(hint):
+                self._missing_keys_checker = missing_keys_factory(_generic_class_field_infos)
+                self._accepts_keywords = True
+                if not hasattr(hint, "__annotations__"):
+                    raise ValueError("Cyclopts cannot handle collections.namedtuple without type annotations.")
+                self._update_lookup(field_infos)
+            elif is_attrs(hint):
+                self._missing_keys_checker = missing_keys_factory(_attrs_field_infos)
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif is_pydantic(hint):
+                self._missing_keys_checker = missing_keys_factory(_pydantic_field_infos)
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif is_enum_flag(hint):
+                self._enum_flag_type = hint
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif not is_builtin(hint) and field_infos:
+                self._missing_keys_checker = missing_keys_factory(_generic_class_field_infos)
+                self._accepts_keywords = True
+                self._update_lookup(field_infos)
+            elif self.parameter.accepts_keys is None:
+                continue
+
+            if self.parameter.accepts_keys is None:
+                continue
+
+            self._accepts_keywords = True
+            self._missing_keys_checker = missing_keys_factory(_generic_class_field_infos)
+            for i, field_info in enumerate(signature_parameters(hint.__init__).values()):
+                if i == 0 and field_info.name == "self":
+                    continue
+                if field_info.kind is field_info.VAR_KEYWORD:
+                    self._default = field_info.annotation
+                elif field_info.name not in self._lookup:
+                    # Fields already registered via ``get_field_infos`` have richer metadata
+                    # (e.g. resolved ``default_factory`` values) than the raw ``__init__``
+                    # signature; don't re-register them.
+                    self._update_lookup({field_info.name: field_info})
+
+        if self._accepts_keywords and len(hints) > 1:
+            # Genuine multi-branch ``Union`` of keyword-accepting types (not ``Foo | None``,
+            # whose only composite branch collapses to a single dict). Record each branch's
+            # type and fields so requiredness can be evaluated per-branch at conversion time.
+            branches = [(member, fis) for member in hints if (fis := get_field_infos(member))]
+            if len(branches) > 1:
+                self._union_branches = branches
+                # The generic checker would introspect the ``typing.Union`` alias itself
+                # (yielding phantom fields like ``origin``); branch-aware gating in
+                # :meth:`_convert` supersedes it.
+                self._missing_keys_checker = None
+
+        if self.parameter.choices and self._accepts_keywords and not any(dict in {h, get_origin(h)} for h in hints):
+            raise ValueError(_CHOICES_UNSUPPORTED.format(hint=self.hint))
+
+    def _update_lookup(self, field_infos: dict[str, FieldInfo]):
+        discriminator = get_annotated_discriminator(self.field_info.annotation)
+
+        for key, field_info in field_infos.items():
+            if existing_field_info := self._lookup.get(key):
+                if existing_field_info == field_info:
+                    pass
+                elif discriminator and discriminator in field_info.names and discriminator in existing_field_info.names:
+                    existing_field_info.annotation = Literal[existing_field_info.annotation, field_info.annotation]
+                    existing_field_info.default = FieldInfo.empty
+                else:
+                    raise NotImplementedError
+            else:
+                self._lookup[key] = field_info
+
+    @property
+    def value(self):
+        """Converted value from last :meth:`convert` call.
+
+        This value may be stale if fields have changed since last :meth:`convert` call.
+        :class:`.UNSET` if :meth:`convert` has not yet been called with tokens.
+        """
+        return self._value
+
+    @value.setter
+    def value(self, val):
+        if self._marked:
+            self._mark_converted_override = True
+        self._marked = True
+        self._value = val
+
+    @property
+    def _marked(self):
+        """If ``True``, then this node in the tree has already been converted and ``value`` has been populated."""
+        return self._marked_converted | self._mark_converted_override
+
+    @_marked.setter
+    def _marked(self, value: bool):
+        self._marked_converted = value
+
+    @property
+    def resolved_hint(self) -> Any:
+        """Hint with Optional stripped for dispatch and type matching."""
+        return resolve_optional(self.hint)
+
+    @property
+    def _accepts_arbitrary_keywords(self) -> bool:
+        args = get_args(self.resolved_hint) if is_union(self.resolved_hint) else (self.resolved_hint,)
+        return any(dict in (arg, get_origin(arg)) for arg in args)
+
+    @property
+    def show_default(self) -> bool | str | Callable[[Any], str]:
+        """Show the default value on the help page."""
+        if self.required:
+            return False
+        elif self.parameter.show_default is None:
+            return self.field_info.default not in (None, self.field_info.empty)
+        elif isinstance(self.parameter.show_default, str):
+            return self.parameter.show_default
+        elif (self.field_info.default is self.field_info.empty) or not self.parameter.show_default:
+            return False
+        else:
+            return self.parameter.show_default
+
+    @property
+    def _explicit_none(self) -> bool:
+        """A lone keyless ``None`` token (a JSON/config ``null``) with no populated children."""
+        return (
+            len(self.tokens) == 1
+            and not self.tokens[0].keys
+            and self.tokens[0].implicit_value is None
+            and not any(child.has_tokens for child in self.children)
+        )
+
+    @property
+    def _use_pydantic_type_adapter(self) -> bool:
+        return bool(
+            is_pydantic(self.hint)
+            or (
+                is_union(self.hint)
+                and (
+                    any(is_pydantic(x) for x in get_args(self.hint))
+                    or get_annotated_discriminator(self.field_info.annotation)
+                )
+            )
+        )
+
+    def _type_hint_for_key(self, key: str):
+        try:
+            return self._lookup[key].annotation
+        except KeyError:
+            if self._default is None:
+                raise
+            return self._default
+
+    def _should_attempt_json_dict(self, tokens: Sequence[Token | str] | None = None) -> bool:
+        """When parsing, should attempt to parse the token(s) as json dict data."""
+        if tokens is None:
+            tokens = self.tokens
+        if not tokens:
+            return False
+        value = tokens[0].value if isinstance(tokens[0], Token) else tokens[0]
+        if not value.strip().startswith("{"):
+            return False
+
+        if self._accepts_keywords:
+            if self.parameter.json_dict is not None:
+                return self.parameter.json_dict
+            if contains_hint(self.field_info.annotation, str):
+                return False
+            return True
+
+        origin = get_origin(self.resolved_hint)
+        if origin in ITERABLE_TYPES:
+            args = get_args(self.resolved_hint)
+            if args and args[0] is not str:
+                return True
+
+        return False
+
+    def _should_attempt_json_list(
+        self, tokens: Sequence[Token | str] | Token | str | None = None, keys: tuple[str, ...] = ()
+    ) -> bool:
+        """When parsing, should attempt to parse the token(s) as json list data."""
+        if tokens is None:
+            tokens = self.tokens
+        if not tokens:
+            return False
+        _, consume_all = self.token_count(keys)
+        if not consume_all:
+            return False
+        if isinstance(tokens, Token):
+            value = tokens.value
+        elif isinstance(tokens, str):
+            value = tokens
+        else:
+            value = tokens[0].value if isinstance(tokens[0], Token) else tokens[0]
+        if not value.strip().startswith("["):
+            return False
+        if self.parameter.json_list is not None:
+            return self.parameter.json_list
+        hint = resolve_optional(self.hint)
+        for arg in get_args(hint) or (str,):
+            if contains_hint(arg, str):
+                return False
+        return True
+
+    def match(
+        self,
+        term: str | int,
+        *,
+        transform: Callable[[str], str] | None = None,
+        delimiter: str = ".",
+    ) -> tuple[tuple[str, ...], Any]:
+        """Match a name search-term, or a positional integer index.
+
+        Raises
+        ------
+        ValueError
+            If no match is found.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Leftover keys after matching to this argument.
+            Used if this argument accepts_arbitrary_keywords.
+        Any
+            Implicit value.
+            :obj:`~.UNSET` if no implicit value is applicable.
+        """
+        if not self.parse:
+            raise ValueError
+        return (
+            self._match_index(term)
+            if isinstance(term, int)
+            else self._match_name(term, transform=transform, delimiter=delimiter)
+        )
+
+    def _normalize_trailing_keys(self, trailing: tuple[str, ...]) -> tuple[str, ...]:
+        """Map kebab-case segments back to their canonical Python field names.
+
+        Walks the type hint segment-by-segment:
+
+        * Dynamic ``dict`` keys pass through unchanged (advance to the value type).
+        * Segments addressing a structured type (pydantic / dataclass / attrs /
+          TypedDict / NamedTuple) are looked up in a ``{name_transform(name): name}``
+          map built from the type's field_infos; on hit, the segment is replaced
+          with the canonical name and the walk advances to that field's annotation.
+        * On miss or when the hint is unwalkable (plain scalar, unresolved forward
+          ref, etc.) remaining segments pass through unchanged — this preserves the
+          existing raw-snake_case behavior as a backward-compat fallback.
+        """
+        name_transform = self.parameter.name_transform
+        if name_transform is None or not trailing:
+            return trailing
+
+        # Seed from ``self.hint`` (not ``field_info.annotation``): for
+        # ``**kwargs: SubConfig``, the annotation is ``SubConfig`` but the hint
+        # is ``dict[str, SubConfig]`` — we need the wrapped form so the first
+        # trailing segment is routed as a dict key rather than a field name.
+        hint = resolve(self.hint)
+        out: list[str] = []
+        i = 0
+        while i < len(trailing):
+            segment = trailing[i]
+            hint = resolve_optional(hint)
+
+            if get_origin(hint) is dict:
+                out.append(segment)
+                args = get_args(hint)
+                hint = args[1] if len(args) > 1 else str
+                i += 1
+                continue
+
+            field_infos = {}
+            try:
+                field_infos = get_field_infos(hint)
+            except Exception:
+                pass
+            if not field_infos:
+                out.extend(trailing[i:])
+                break
+
+            # Build a kebab→canonical map from ``fi.names`` only.  Cyclopts's
+            # field_info extractors populate ``names`` with exactly the names
+            # the underlying library accepts (e.g. pydantic omits the python
+            # name when ``populate_by_name=False``); trust that.
+            name_map: dict[str, tuple[str, Any]] = {}
+            for canonical_name, fi in field_infos.items():
+                for alias in fi.names:
+                    name_map.setdefault(name_transform(alias), (canonical_name, fi.annotation))
+
+            match = name_map.get(segment)
+            if match is None:
+                out.extend(trailing[i:])
+                break
+            canonical_name, next_hint = match
+            out.append(canonical_name)
+            hint = resolve(next_hint)
+            i += 1
+
+        return tuple(out)
+
+    def _match_name(
+        self,
+        term: str,
+        *,
+        transform: Callable[[str], str] | None = None,
+        delimiter: str = ".",
+    ) -> tuple[tuple[str, ...], Any]:
+        """Check how well this argument matches a token keyword identifier.
+
+        Parameters
+        ----------
+        term: str
+            Something like "--foo"
+        transform: Callable
+            Function that converts the cyclopts Parameter name(s) into
+            something that should be compared against ``term``.
+
+        Raises
+        ------
+        ValueError
+            If no match found.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Leftover keys after matching to this argument.
+            Used if this argument accepts_arbitrary_keywords.
+        Any
+            Implicit value.
+        """
+        if self.field_info.kind is self.field_info.VAR_KEYWORD and self._accepts_arbitrary_keywords:
+            return self._normalize_trailing_keys(tuple(term.lstrip("-").split(delimiter))), UNSET
+
+        trailing = term
+        implicit_value = UNSET
+
+        if not self.parameter.name:
+            raise ValueError(f"No name to match {term!r}")
+        for name in self.parameter.name:
+            if transform:
+                name = transform(name)
+            if startswith(term, name):
+                trailing = term[len(name) :]
+                implicit_value = (
+                    True if self.resolved_hint is bool or self.resolved_hint in ITERATIVE_BOOL_IMPLICIT_VALUE else UNSET
+                )
+                if trailing:
+                    if trailing[0] == delimiter:
+                        trailing = trailing[1:]
+                        break
+                else:
+                    return (), implicit_value
+        else:
+            hint = self._negatives_hint
+            if is_union(hint):
+                hints = get_args(hint)
+            else:
+                hints = (hint,)
+            for hint in hints:
+                hint = resolve_annotated(hint)
+                double_break = False
+                for name in self.parameter.get_negatives(hint):
+                    if transform:
+                        name = transform(name)
+                    if startswith(term, name):
+                        trailing = term[len(name) :]
+                        if hint in ITERATIVE_BOOL_IMPLICIT_VALUE:
+                            implicit_value = False
+                        elif is_nonetype(hint) or hint is None:
+                            implicit_value = None
+                        else:
+                            implicit_value = create_empty_instance(resolve_optional(hint))
+                        if trailing:
+                            if trailing[0] == delimiter:
+                                trailing = trailing[1:]
+                                double_break = True
+                                break
+                        else:
+                            return (), implicit_value
+                if double_break:
+                    break
+            else:
+                raise ValueError
+
+        if not self._accepts_arbitrary_keywords:
+            raise ValueError
+
+        return self._normalize_trailing_keys(tuple(trailing.split(delimiter))), implicit_value
+
+    def _match_index(self, index: int) -> tuple[tuple[str, ...], Any]:
+        if self.index is None:
+            raise ValueError
+        elif self.field_info.kind is self.field_info.VAR_POSITIONAL:
+            if index < self.index:
+                raise ValueError
+        elif index != self.index:
+            raise ValueError
+        return (), UNSET
+
+    def append(self, token: Token):
+        """Safely add a :class:`Token`."""
+        if not self.parse:
+            raise ValueError
+
+        if self.parameter.count and self.tokens:
+            # An explicit ``=value`` (marked by a non-empty ``value``) sets the count
+            # and must be the flag's only occurrence; plain repeats may still sum.
+            explicit = next((x for x in (token, *self.tokens) if x.value and x.implicit_value is not UNSET), None)
+            if explicit is not None:
+                raise RepeatArgumentError(
+                    token=token,
+                    msg=f'"{explicit.keyword}={explicit.value}" sets the count explicitly '
+                    "and cannot be combined with other occurrences of the flag.",
+                )
+
+        if any(x.address == token.address for x in self.tokens):
+            if self.parameter.allow_repeating is False:
+                raise RepeatArgumentError(token=token)
+            _, consume_all = self.token_count(token.keys)
+            is_flag_repeat = not token.keys and any(
+                self._is_whole_implicit_value(x.implicit_value)
+                for x in (token, *self.tokens)
+                if x.address == token.address
+            )
+            if self.parameter.allow_repeating is True:
+                if is_flag_repeat:
+                    # A flag replaces the whole value, including every element of a multi-token occurrence.
+                    self.tokens = [x for x in self.tokens if x.keys != token.keys]
+                elif not consume_all:
+                    # "last wins" for scalar types — remove old tokens with same address
+                    self.tokens = [x for x in self.tokens if x.address != token.address]
+            elif (not consume_all or is_flag_repeat) and not self.parameter.count:
+                raise RepeatArgumentError(token=token)
+
+        if self.tokens:
+            if bool(token.keys) ^ any(x.keys for x in self.tokens):
+                raise MixedArgumentError(argument=self)
+        self.tokens.append(token)
+
+    def _is_whole_implicit_value(self, value: Any) -> bool:
+        """Whether a flag's implicit value is this argument's complete value.
+
+        ``False`` for an element of an iterable, like each ``--flag`` of a ``list[bool]``.
+        """
+        if value is UNSET:
+            return False
+        hint = self.resolved_hint
+        for member in get_args(hint) if is_union(hint) else (hint,):
+            member = resolve_annotated(member)
+            origin = get_origin(member) or member
+            if not isinstance(origin, type):
+                continue
+            try:
+                if isinstance(value, origin):
+                    return True
+            except TypeError:  # e.g. TypedDict and non-runtime Protocols reject isinstance.
+                continue
+        return False
+
+    @property
+    def has_tokens(self) -> bool:
+        """This argument, or a child argument, has at least 1 parsed token."""  # noqa: D404
+        return bool(self.tokens) or any(x.has_tokens for x in self.children)
+
+    @property
+    def children_recursive(self) -> "ArgumentCollection":
+        from cyclopts.argument._collection import ArgumentCollection
+
+        out = ArgumentCollection()
+        for child in self.children:
+            out.append(child)
+            out.extend(child.children_recursive)
+        return out
+
+    def _convert_pydantic(self):
+        if self.has_tokens:
+            import pydantic
+
+            for child in self.children_recursive:
+                if child.parameter.choices and child.has_tokens:
+                    # Persist the canonicalized tokens so ``_json`` (and pydantic) see the
+                    # listed spelling rather than the raw input (e.g. Enum ``RED`` -> ``red``).
+                    child.tokens = child._validate_choices(child._expand_json_list_tokens(child.tokens))
+            unstructured_data = self._json()
+            try:
+                return pydantic.TypeAdapter(self.field_info.annotation).validate_python(unstructured_data)
+            except pydantic.ValidationError as e:
+                self._handle_pydantic_validation_error(e)
+        else:
+            return UNSET
+
+    def _convert(self, converter: Callable | None = None):
+        from cyclopts.argument._collection import update_argument_collection
+
+        if self.parameter.converter:
+            converter = self.parameter.resolve_converter(self.hint)
+        elif converter is None:
+            converter = partial(convert, name_transform=self.parameter.name_transform)
+
+        assert converter is not None  # Ensure converter is set at this point
+
+        def safe_converter(hint, tokens):
+            # Use resolved hint (without Annotated wrapper) for error messages
+            error_hint = resolve_annotated(hint)
+            # For user-provided converters, resolve Optional so they receive the
+            # non-None type (e.g., `int` instead of `int | None`).
+            # This makes the user's converter simpler for common scenarios of ``CustomType | None``
+            # Built-in convert() gets the full union for none-coercion support.
+            converter_hint = resolve_optional(hint) if self.parameter.converter else hint
+            if isinstance(tokens, dict):
+                try:
+                    return converter(converter_hint, tokens)  # pyright: ignore
+                except (AssertionError, ValueError, TypeError) as e:
+                    raise CoercionError(msg=e.args[0] if e.args else None, argument=self, target_type=error_hint) from e
+            else:
+                try:
+                    # Detect bound methods (classmethods/instance methods)
+                    if inspect.ismethod(converter):
+                        # Call with just tokens - cls/self already bound
+                        return converter(tokens)  # pyright: ignore[reportCallIssue]
+                    else:
+                        # Regular function - pass type and tokens
+                        return converter(converter_hint, tokens)  # pyright: ignore[reportCallIssue]
+                except (AssertionError, ValueError, TypeError) as e:
+                    token = tokens[0] if len(tokens) == 1 else None
+                    raise CoercionError(
+                        msg=e.args[0] if e.args else None, argument=self, target_type=error_hint, token=token
+                    ) from e
+
+        if not self.parse:
+            out = UNSET
+        elif self.parameter.count:
+            out = sum(token.implicit_value for token in self.tokens if token.implicit_value is not UNSET)
+        elif self._explicit_none:
+            return None
+        elif not self.children:
+            positional: list[Token] = []
+            keyword = {}
+
+            expanded_tokens = self._expand_json_list_tokens(self.tokens)
+            if self.parameter.choices:
+                expanded_tokens = self._validate_choices(expanded_tokens)
+            for token in expanded_tokens:
+                if self._is_whole_implicit_value(token.implicit_value):
+                    assert len(expanded_tokens) == 1
+                    return token.implicit_value
+
+                # Handle negative_none flag: implicit_value=None for Optional types
+                # Use self.hint (not self.resolved_hint) to preserve Optional/Union
+                if token.implicit_value is None:
+                    hint = self.hint
+                    if is_union(hint):
+                        if any(is_nonetype(arg) or arg is None for arg in get_args(hint)):
+                            assert len(expanded_tokens) == 1
+                            return None
+                    elif is_nonetype(hint) or hint is None:
+                        assert len(expanded_tokens) == 1
+                        return None
+
+                if token.keys:
+                    lookup = keyword
+                    for key in token.keys[:-1]:
+                        lookup = lookup.setdefault(key, {})
+                    lookup.setdefault(token.keys[-1], []).append(token)
+                else:
+                    positional.append(token)
+
+                if positional and keyword:  # pragma: no cover
+                    raise MixedArgumentError(argument=self)
+
+            # self.hint has Annotated stripped but Optional preserved for none-coercion.
+            # For VAR_POSITIONAL/VAR_KEYWORD, self.hint has the tuple/dict wrapper.
+            if positional:
+                if self.field_info and self.field_info.kind is self.field_info.VAR_POSITIONAL:
+                    hint = get_args(self.hint)[0]
+                    tokens_per_element, _ = self.token_count()
+                    out = tuple(safe_converter(hint, values) for values in grouper(positional, tokens_per_element))
+                else:
+                    out = safe_converter(self.hint, tuple(positional))
+            elif keyword:
+                if self.field_info and self.field_info.kind is self.field_info.VAR_KEYWORD and not self.keys:
+                    out = {key: safe_converter(get_args(self.hint)[1], value) for key, value in keyword.items()}
+                else:
+                    out = safe_converter(self.hint, keyword)
+            elif self.required:
+                raise MissingArgumentError(argument=self)
+            else:
+                return UNSET
+        else:
+            data = {}
+            out = UNSET
+            # An explicitly-supplied empty mapping (e.g. ``x = {}`` in a config file, or
+            # ``--x={}`` on the cli) means "instantiate from defaults", not "missing".
+            explicit_empty_mapping = False
+
+            if (
+                self._enum_flag_type
+                and is_union(self.resolved_hint)
+                and not any(token.keys for token in self.tokens)
+                and not any(child.has_tokens for child in self.children)
+            ):
+                # e.g. ``bool | MyFlag``; the other members need a chance at the tokens.
+                # With ``--x.<key>`` tokens too, the Flag path below combines or rejects them.
+                positional_tokens = self.tokens
+                if len(positional_tokens) == 1 and self._is_whole_implicit_value(positional_tokens[0].implicit_value):
+                    return positional_tokens[0].implicit_value
+                if positional_tokens:
+                    return safe_converter(self.hint, tuple(positional_tokens))
+
+            if self._enum_flag_type:
+                out = self._enum_flag_type(0)
+
+            if self._enum_flag_type and self.tokens:
+                converted_flags = safe_converter(self._enum_flag_type, self.tokens)
+                out |= reduce(operator.or_, converted_flags) if isinstance(converted_flags, list) else converted_flags
+
+            if self._should_attempt_json_dict():
+                json_tokens, self.tokens = self.tokens, []
+                for token in json_tokens:
+                    try:
+                        parsed_json = json.loads(token.value)
+                    except json.JSONDecodeError as e:
+                        raise CoercionError(token=token, target_type=self.hint) from e
+                    _validate_json_extra_keys(parsed_json, self.resolved_hint, token)
+                    if parsed_json:
+                        update_argument_collection(
+                            {self.name.lstrip("-"): parsed_json},
+                            token.source,
+                            self.children_recursive,
+                            root_keys=(),
+                            allow_unknown=False,
+                        )
+                    else:
+                        explicit_empty_mapping = True
+                        # Placeholder so ``has_tokens`` still reports this argument as supplied.
+                        self.tokens.append(token.evolve(value="", implicit_value={}))
+
+            if self._use_pydantic_type_adapter:
+                return self._convert_pydantic()
+
+            if self.tokens and not self._enum_flag_type:
+                positional_tokens = [token for token in self.tokens if not token.keys]
+                if any(isinstance(token.implicit_value, dict) for token in positional_tokens):
+                    explicit_empty_mapping = True
+                    positional_tokens = [
+                        token for token in positional_tokens if not isinstance(token.implicit_value, dict)
+                    ]
+                if len(positional_tokens) == 1 and self._is_whole_implicit_value(positional_tokens[0].implicit_value):
+                    return positional_tokens[0].implicit_value
+                if positional_tokens:
+                    return safe_converter(self.hint, tuple(positional_tokens))
+
+            supplied_keys = {child.keys[-1] for child in self.children if child.has_tokens}
+            active_required = self._active_branch_required_keys(supplied_keys)
+            for child in self.children:
+                assert len(child.keys) == (len(self.keys) + 1)
+                # For multi-branch unions, requiredness is decided per active branch rather
+                # than by the (cross-branch, over-counting) static ``child.required``.
+                child_required = child.keys[-1] in active_required if active_required is not None else child.required
+                if child.has_tokens:
+                    data[child.keys[-1]] = child.convert_and_validate(converter=converter)
+                elif child_required:
+                    obj = data
+                    for k in child.keys:
+                        try:
+                            obj = obj[k]
+                        except Exception:
+                            raise MissingArgumentError(argument=child) from None
+                    child._marked = True
+                elif active_required is not None:
+                    # Inactive-branch leaf of a multi-branch union: the parent owns the whole
+                    # subtree, so mark it (and descendants) handled to stop the collection loop
+                    # from converting it standalone and raising on its static ``required``.
+                    child._marked = True
+                    for descendant in child.children_recursive:
+                        descendant._marked = True
+
+            self._run_missing_keys_checker(data)
+
+            member = None
+            if self._union_branches and data:
+                # ``instantiate_from_dict`` cannot build a bare ``Union``; pick the branch
+                # whose fields accept the supplied data.
+                member = self._resolve_union_member(set(data))
+                if member is None or (member is not self._enum_flag_type and out):
+                    # Supplied fields span multiple branches / match no single one, or
+                    # sibling-member fields were mixed with enum.Flag values.
+                    raise CoercionError(
+                        msg=f"Cannot determine which {get_hint_name(self.hint)} variant the supplied fields belong to.",
+                        argument=self,
+                        target_type=self.hint,
+                    )
+
+            if self._enum_flag_type and member in (None, self._enum_flag_type):
+                out |= enum_flag_from_dict(self._enum_flag_type, data, self.parameter.name_transform)
+                if not out:
+                    out = UNSET
+            elif data or explicit_empty_mapping:
+                # Use resolved_hint to get the actual class type (Optional stripped)
+                out = instantiate_from_dict(member or self.resolved_hint, data)
+            elif self.required:
+                raise MissingArgumentError(argument=self)  # pragma: no cover
+            else:
+                out = UNSET
+
+        return out
+
+    def convert(self, converter: Callable | None = None):
+        """Converts :attr:`tokens` into :attr:`value`.
+
+        Parameters
+        ----------
+        converter: Callable | None
+            Converter function to use. Overrides ``self.parameter.converter``
+
+        Returns
+        -------
+        Any
+            The converted data. Same as :attr:`value`.
+        """
+        if not self._marked:
+            try:
+                self.value = self._convert(converter=converter)
+            except CoercionError as e:
+                if e.argument is None:
+                    e.argument = self
+                if e.target_type is None:
+                    e.target_type = self.hint
+                raise
+            except CycloptsError as e:
+                if e.argument is None:
+                    e.argument = self
+                raise
+
+        return self.value
+
+    def validate(self, value):
+        """Validates provided value.
+
+        Parameters
+        ----------
+        value:
+            Value to validate.
+
+        Returns
+        -------
+        Any
+            The converted data. Same as :attr:`value`.
+        """
+        assert isinstance(self.parameter.validator, tuple)
+
+        # Only use pydantic validation if pydantic v2+ is available.
+        # Pydantic v1 has an incompatible API (e.g. no TypeAdapter).
+        if "pydantic" in sys.modules:
+            import pydantic
+
+            pydantic_version = parse_version(pydantic.__version__)
+            if pydantic_version < (2,):
+                pydantic = None
+        else:
+            pydantic = None
+
+        def validate_pydantic(hint, val):
+            if not pydantic:
+                return
+            if self._use_pydantic_type_adapter:
+                return
+
+            try:
+                pydantic.TypeAdapter(hint).validate_python(val)
+            except pydantic.ValidationError as e:
+                self._handle_pydantic_validation_error(e)
+            except pydantic.PydanticUserError:
+                pass
+
+        def _resolve(validator, hint):
+            if isinstance(validator, str):
+                validator = getattr(hint, validator)
+            return validator
+
+        try:
+            if (
+                not self.keys
+                and self.field_info
+                and self.field_info.kind is self.field_info.VAR_KEYWORD
+                and self._accepts_arbitrary_keywords
+            ):
+                hint = resolve_optional(get_args(self.hint)[1])
+                for validator in self.parameter.validator:
+                    validator = _resolve(validator, hint)
+                    is_method = inspect.ismethod(validator)
+                    for val in value.values():
+                        if is_method:
+                            validator(val)  # pyright: ignore[reportCallIssue]
+                        else:
+                            validator(hint, val)
+                validate_pydantic(dict[str, self.field_info.annotation], value)
+            elif self.field_info and self.field_info.kind is self.field_info.VAR_POSITIONAL:
+                hint = resolve_optional(get_args(self.hint)[0])
+                for validator in self.parameter.validator:
+                    validator = _resolve(validator, hint)
+                    is_method = inspect.ismethod(validator)
+                    for val in value:
+                        if is_method:
+                            validator(val)  # pyright: ignore[reportCallIssue]
+                        else:
+                            validator(hint, val)
+                validate_pydantic(tuple[self.field_info.annotation, ...], value)
+            else:
+                # Validators, like custom converters, receive the Optional-stripped type.
+                hint = resolve_optional(self.hint)
+                for validator in self.parameter.validator:
+                    validator = _resolve(validator, hint)
+                    if inspect.ismethod(validator):
+                        validator(value)
+                    else:
+                        validator(hint, value)
+                validate_pydantic(self.field_info.annotation, value)
+        except (AssertionError, ValueError, TypeError) as e:
+            raise ValidationError(exception_message=e.args[0] if e.args else "", argument=self) from e
+
+    def convert_and_validate(self, converter: Callable | None = None):
+        """Converts and validates :attr:`tokens` into :attr:`value`.
+
+        Parameters
+        ----------
+        converter: Callable | None
+            Converter function to use. Overrides ``self.parameter.converter``
+
+        Returns
+        -------
+        Any
+            The converted data. Same as :attr:`value`.
+        """
+        val = self.convert(converter=converter)
+        if val is not UNSET:
+            self.validate(val)
+        elif self.field_info.default is not FieldInfo.empty:
+            self.validate(self.field_info.default)
+        return val
+
+    def token_count(self, keys: tuple[str, ...] = (), upcoming_tokens: "Sequence[Token] | None" = None):
+        """The number of string tokens this argument consumes.
+
+        Parameters
+        ----------
+        keys: tuple[str, ...]
+            The **python** keys into this argument.
+            If provided, returns the number of string tokens that specific
+            data type within the argument consumes.
+        upcoming_tokens: Sequence[Token] | None
+            Optional sequence of upcoming CLI Token objects for token-aware parsing.
+
+        Returns
+        -------
+        int
+            Number of string tokens to create 1 element.
+        consume_all: bool
+            :obj:`True` if this data type is iterable.
+        """
+        if self.parameter.count:
+            return 0, False
+
+        # Check for explicit n_tokens override
+        # This applies to values at any level: root values (keys=()) or nested values (keys=(...))
+        # For example, **kwargs: Annotated[str, Parameter(n_tokens=2)] means each kwarg value needs 2 tokens
+        if self.parameter.n_tokens is not None:
+            if self.parameter.n_tokens == -1:
+                return 1, True
+            else:
+                # Determine consume_all based on the hint at the requested level
+                # by recursively calling token_count on the hint
+                if len(keys) > 1:
+                    hint = self._default
+                elif len(keys) == 1:
+                    hint = self._type_hint_for_key(keys[0])
+                else:
+                    hint = self.hint
+
+                # Recursively call token_count to get the consume_all behavior
+                # We ignore the token count from the recursive call and use our explicit n_tokens
+                _, consume_all_from_type = token_count(hint)
+                return self.parameter.n_tokens, consume_all_from_type
+
+        if len(keys) > 1:
+            hint = self._default
+        elif len(keys) == 1:
+            hint = self._type_hint_for_key(keys[0])
+        else:
+            hint = self.hint
+            if self._enum_flag_type and not keys:
+                return 1, True
+        tokens_per_element, consume_all = token_count(hint, upcoming_tokens=upcoming_tokens)
+        return tokens_per_element, consume_all
+
+    @property
+    def _negatives_hint(self):
+        # Mirrors ``field_info.annotation`` but substitutes ``type(default)`` when
+        # there is no annotation, so an unannotated ``foo=False`` is treated as
+        # ``bool`` for negative-flag purposes. Unlike ``self.hint``, this preserves
+        # ``Optional`` / unions, which ``negative_none`` depends on.
+        hint = self.field_info.annotation
+        if hint is inspect.Parameter.empty or resolve(hint) is Any:
+            default = self.field_info.default
+            if default is not inspect.Parameter.empty and default is not None:
+                hint = type(default)
+        return resolve_annotated(hint)
+
+    @property
+    def negatives(self):
+        """Negative flags from :meth:`.Parameter.get_negatives`."""
+        return self.parameter.get_negatives(self._negatives_hint)
+
+    @property
+    def name(self) -> str:
+        """The **first** provided name this argument goes by."""
+        return self.names[0]
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Names the argument goes by (both positive and negative)."""
+        import itertools
+
+        assert isinstance(self.parameter.name, tuple)
+        return tuple(itertools.chain(self.parameter.name, self.negatives))
+
+    def env_var_split(self, value: str, delimiter: str | None = None) -> list[str]:
+        """Split a given value with :meth:`.Parameter.env_var_split`."""
+        return self.parameter.env_var_split(self.hint, value, delimiter=delimiter)
+
+    @property
+    def show(self) -> bool:
+        """Show this argument on the help page.
+
+        If an argument has child arguments, don't show it on the help-page.
+        Returns False for arguments that won't be parsed (including underscore-prefixed params).
+        """
+        if self.children:
+            return False
+        if self.parameter.show is not None:
+            # User explicitly set show
+            return self.parameter.show
+        if not self.parameter.name and not self.field_info.is_positional_only:
+            # Nothing to render (e.g. PEP-692 Unpack[EmptyTypedDict] kwargs parent).
+            return False
+        # Default to whether this argument is parsed
+        return self.parse
+
+    @property
+    def parse(self) -> bool:
+        """Whether this argument should be parsed from CLI tokens.
+
+        If ``Parameter.parse`` is a regex pattern, parse if the pattern matches
+        the field name; otherwise don't parse.
+        """
+        if self.parameter.parse is None:
+            return True
+        if isinstance(self.parameter.parse, re.Pattern):
+            return bool(self.parameter.parse.search(self.field_info.name))
+        return bool(self.parameter.parse)
+
+    @property
+    def required(self) -> bool:
+        """Whether or not this argument requires a user-provided value."""
+        if self.parameter.required is None:
+            return self.field_info.required
+        else:
+            return self.parameter.required
+
+    def is_positional_only(self) -> bool:
+        return self.field_info.is_positional_only
+
+    def is_var_positional(self) -> bool:
+        return self.field_info.kind == self.field_info.VAR_POSITIONAL
+
+    def is_flag(self) -> bool:
+        """Check if this argument is a flag (consumes no CLI tokens).
+
+        Flags are arguments that don't consume command-line tokens after the option name.
+        They typically have implicit values (e.g., `--verbose` for bool, `--no-items` for list).
+
+        Returns
+        -------
+        bool
+            True if the argument consumes zero tokens from the command line.
+
+        Examples
+        --------
+        >>> from cyclopts import Parameter
+        >>> bool_arg = Argument(hint=bool, parameter=Parameter(name="--verbose"))
+        >>> bool_arg.is_flag()
+        True
+        >>> str_arg = Argument(hint=str, parameter=Parameter(name="--name"))
+        >>> str_arg.is_flag()
+        False
+        """
+        return self.token_count() == (0, False)
+
+    def _explicit_choices(self) -> tuple[str, ...]:
+        """Resolve ``Parameter.choices`` to strings; empty when not set."""
+        choices = self.parameter.choices
+        if not choices:
+            return ()
+        if isinstance(choices, tuple):
+            return choices
+        return tuple(get_choices_from_hint(choices, self.parameter.name_transform))  # pyright: ignore[reportArgumentType]
+
+    def _expand_json_list_tokens(self, tokens: Sequence[Token]) -> list[Token]:
+        """Split JSON-list tokens into one token per element."""
+        out = []
+        for token in tokens:
+            if not self._should_attempt_json_list(token):
+                out.append(token)
+                continue
+            try:
+                parsed_json = json.loads(token.value)
+            except json.JSONDecodeError as e:
+                raise CoercionError(token=token, target_type=self.hint) from e
+            if not isinstance(parsed_json, list):
+                raise CoercionError(token=token, target_type=self.hint)
+            if not parsed_json:
+                out.append(token.evolve(value="", implicit_value=[]))
+            for element in parsed_json:
+                if element is None:
+                    out.append(token.evolve(value="", implicit_value=element))
+                elif isinstance(element, dict):
+                    out.append(token.evolve(value=json.dumps(element)))
+                else:
+                    out.append(token.evolve(value=str(element)))
+        return out
+
+    def _validate_choices(self, tokens: Sequence[Token]) -> list[Token]:
+        """Reject tokens outside ``Parameter.choices``; rewrite matches to the listed spelling.
+
+        Runs before the converter so it only ever sees a listed choice. When an ``Enum`` is
+        involved (in ``choices`` or the type hint) matching follows :func:`get_enum_member`:
+        ``name_transform`` is applied to both sides.
+        """
+        choices = self._explicit_choices()
+        explicit = self.parameter.choices
+        normalize = (
+            self.parameter.name_transform
+            if (not isinstance(explicit, tuple) and contains_enum(explicit)) or contains_enum(self.hint)
+            else str
+        )
+        lookup = {normalize(choice): choice for choice in choices}
+        out = []
+        for token in tokens:
+            # A non-keyed token on a dict-like leaf is not a single value; let the converter report it.
+            if token.implicit_value is not UNSET or (self._accepts_keywords and not token.keys):
+                out.append(token)
+                continue
+            try:
+                canonical = lookup[normalize(token.value)]
+            except KeyError:
+                raise CoercionError(token=token, argument=self, target_type=Literal[choices]) from None  # pyright: ignore
+            out.append(token if canonical == token.value else token.evolve(value=canonical))
+        return out
+
+    def get_choices(self, force: bool = False) -> tuple[str, ...] | None:
+        """Choices for the help page and shell completion.
+
+        ``Parameter.choices`` takes precedence; otherwise derived from the type hint.
+
+        Extracts choices from Literal types, Enum types, and Union types containing them.
+        Respects the Parameter.show_choices setting unless force=True.
+
+        Parameters
+        ----------
+        force : bool
+            If True, return choices even when show_choices=False.
+            Used by shell completion to always provide choices.
+
+        Returns
+        -------
+        tuple[str, ...] | None
+            Tuple of choice strings if choices exist and should be shown, None otherwise.
+
+        Examples
+        --------
+        >>> argument = Argument(hint=Literal["dev", "staging", "prod"], parameter=Parameter(show_choices=True))
+        >>> argument.get_choices()
+        ('dev', 'staging', 'prod')
+        >>> argument = Argument(hint=Literal["dev", "staging", "prod"], parameter=Parameter(show_choices=False))
+        >>> argument.get_choices()  # Returns None for help text
+        >>> argument.get_choices(force=True)  # Returns choices for completion
+        ('dev', 'staging', 'prod')
+        """
+        if not force and not self.parameter.show_choices:
+            return None
+        if explicit := self._explicit_choices():
+            return explicit
+        choices = get_choices_from_hint(self.hint, self.parameter.name_transform)
+        return tuple(choices) if choices else None
+
+    def get_completions(self, context: Any) -> list[tuple[str, str]] | None:
+        """Run this argument's :attr:`.Parameter.completer` (invoked as ``completer(context)``) at completion time.
+
+        Unlike :meth:`get_choices` (static values from the type hint), this runs
+        a user callback. Returns ``None`` if no completer is set, else a list of
+        ``(value, description)`` tuples (see :attr:`.Parameter.completer` for the
+        accepted return shapes).
+        """
+        from cyclopts.completion._engine import normalize_completions
+
+        completer = self.parameter.completer
+        if completer is None:
+            return None
+        return normalize_completions(completer(context))
+
+    def _json(self) -> dict:
+        """Convert argument to be json-like for pydantic.
+
+        All values will be str/list/dict. JSON-serialized strings (from sources
+        like config files or environment variables) are deserialized back to their
+        original dict/list structure.
+        """
+        out = {}
+        if self._accepts_keywords:
+            for token in self.tokens:
+                if not token.keys and isinstance(token.implicit_value, dict):
+                    # An explicitly-supplied empty mapping (e.g. ``x = {}`` in a config file);
+                    # contributes no keys, but ``has_tokens`` already marks the argument as supplied.
+                    continue
+                node = out
+                for key in token.keys[:-1]:
+                    node = node.setdefault(key, {})
+                node[token.keys[-1]] = token.value if token.implicit_value is UNSET else token.implicit_value
+        for child in self.children:
+            child._marked = True
+            if not child.has_tokens:
+                continue
+            keys = child.keys[len(self.keys) :]
+            if child._explicit_none:
+                out[keys[0]] = None
+            elif child._accepts_keywords:
+                result = child._json()
+                if result:
+                    out[keys[0]] = result
+            # Use resolved_hint for checking iterable types (e.g., list[str] | None -> list[str])
+            elif (get_origin(child.resolved_hint) or child.resolved_hint) in ITERABLE_TYPES:
+                for token in child.tokens:
+                    if token.implicit_value is not UNSET:
+                        out.setdefault(keys[-1], []).extend(token.implicit_value)
+                    else:
+                        value = token.value
+                        # Deserialize JSON strings (from update_argument_collection) back to dict/list
+                        if isinstance(value, str) and value.strip() and value.strip()[0] in ("{", "["):
+                            try:
+                                value = json.loads(value)
+                            except json.JSONDecodeError:
+                                pass
+                        out.setdefault(keys[-1], []).append(value)
+            else:
+                token = child.tokens[0]
+                out[keys[0]] = token.value if token.implicit_value is UNSET else token.implicit_value
+        return out
+
+    def _resolve_missing_keys(self, data) -> "list[tuple[tuple[str, ...], Argument | None]]":
+        """Map each required-but-absent key reported by the checker to its child ``Argument``.
+
+        Non-raising core shared by :meth:`_run_missing_keys_checker` (the conversion-time
+        error path) and :meth:`_missing_children` (the read-only query path). The checker
+        only inspects ``set(data)`` — the keys — so the values in ``data`` are irrelevant.
+
+        Returns a list of ``(full_keys, argument)`` pairs in checker order; ``argument`` is
+        ``None`` for a required key that maps to no Cyclopts-accessible child.
+        """
+        if not self._missing_keys_checker:
+            return []
+        out = []
+        for key in self._missing_keys_checker(self, data):
+            keys = self.keys + (key,)
+            matched = self.children.filter_by(keys_prefix=keys)
+            out.append((keys, matched[0] if matched else None))
+        return out
+
+    def _union_candidate_branches(self, supplied_keys: "set[str]") -> "list[tuple[Any, set[str]]]":
+        """Branches that can fully account for ``supplied_keys`` (i.e. ``supplied ⊆ branch``).
+
+        These are the ``Union`` members the user could be completing; a branch that doesn't
+        contain every supplied field can't be the intended one. Yields ``(member, required_keys)``
+        — the only branch information either caller needs. Returns ``[]`` when the supplied
+        fields span multiple branches (over-supplied / ambiguous input) or when this is not a
+        multi-branch ``Union``. In declaration order.
+        """
+        return [
+            (member, {k for k, v in fis.items() if v.required})
+            for member, fis in self._union_branches
+            if supplied_keys <= set(fis)
+        ]
+
+    def _active_branch_required_keys(self, supplied_keys: "set[str]") -> "set[str] | None":
+        """Required child keys still owed by the chosen branch of a multi-branch ``Union``.
+
+        Picks among the candidate branches (see :meth:`_union_candidate_branches`): if any is
+        already fully satisfied, nothing is owed (``set()``); otherwise the candidate closest
+        to completion (fewest missing required fields, ties broken by declaration order) guides
+        which fields are still required. This convergent guidance means the prompt loop fills
+        the same branch that :meth:`_resolve_union_member` later instantiates. Supplying one
+        ``Union`` member's fields never demands a sibling member's
+        required fields. Returns ``None`` when :attr:`hint` is not a multi-branch ``Union``
+        (caller falls back to the static :attr:`Argument.required` per child).
+        """
+        if not self._union_branches:
+            return None
+        if not supplied_keys:
+            # Nothing supplied: the user hasn't committed to a branch, so don't demand any
+            # particular one. Total omission is handled by the composite-level required check.
+            return set()
+        candidates = self._union_candidate_branches(supplied_keys)
+        if not candidates:  # ambiguous/over-supplied: owe nothing, let instantiation error cleanly
+            return set()
+        required_per_candidate = [required for _, required in candidates]
+        if any(required <= supplied_keys for required in required_per_candidate):
+            return set()  # a complete branch exists
+        return min(required_per_candidate, key=lambda required: len(required - supplied_keys))
+
+    def _resolve_union_member(self, data_keys: "set[str]"):
+        """The ``Union`` member to instantiate given the converted ``data_keys``.
+
+        Picks the first candidate branch (``data ⊆ branch``) whose required fields are all
+        present, since :func:`instantiate_from_dict` cannot instantiate a bare ``Union``.
+        Returns ``None`` if no branch is satisfied (caller raises a clean error).
+        """
+        for member, required in self._union_candidate_branches(data_keys):
+            if required <= data_keys:
+                return member
+        return None
+
+    def _missing_children(self) -> "list[Argument]":
+        """Direct child arguments the checker reports as required-and-absent (non-raising).
+
+        Builds the provided-key set from token presence rather than converted values, so it
+        can be called before/without conversion. When no child currently has a token (a
+        fully-omitted composite) the checker returns every required child. For multi-branch
+        ``Union`` composites, requiredness is branch-aware (see
+        :meth:`_active_branch_required_keys`).
+
+        Special case: a *required* multi-branch ``Union`` with no supplied fields hasn't
+        committed to a branch, so :meth:`_active_branch_required_keys` owes nothing — which
+        would leave an interactive prompt loop blind to a value it must collect. Default to
+        the first branch's required fields so the loop converges on (and instantiates) it,
+        matching the declaration-order preference of :meth:`_resolve_union_member`. This
+        read-only query path only; conversion still errors on the composite itself.
+        """
+        supplied_keys = {child.keys[-1] for child in self.children if child.has_tokens}
+        if self._union_branches and self.required and not supplied_keys:
+            first_branch_required = {k for k, v in self._union_branches[0][1].items() if v.required}
+            return [
+                child for child in self.children if not child.has_tokens and child.keys[-1] in first_branch_required
+            ]
+        active_required = self._active_branch_required_keys(supplied_keys)
+        if active_required is not None:
+            return [child for child in self.children if not child.has_tokens and child.keys[-1] in active_required]
+        data = dict.fromkeys(supplied_keys)
+        return [argument for _, argument in self._resolve_missing_keys(data) if argument is not None]
+
+    def _run_missing_keys_checker(self, data):
+        if not self._missing_keys_checker or (not self.required and not data):
+            return
+        for keys, argument in self._resolve_missing_keys(data):
+            if argument is not None:
+                raise MissingArgumentError(argument=argument)
+            missing_description = self.field_info.names[0] + "->" + "->".join(keys)
+            raise ValueError(
+                f'Required field "{missing_description}" is not accessible by Cyclopts; possibly due to conflicting POSITIONAL/KEYWORD requirements.'
+            )
+
+    def _handle_pydantic_validation_error(self, exc):
+        import pydantic
+
+        error = exc.errors()[0]
+        if error["type"] == "missing":
+            loc = error["loc"]
+
+            # Pydantic includes list indices in loc for list-element errors
+            # (e.g. ("animals", 0, "dog", "name")). Cyclopts doesn't model list
+            # items as individual Arguments, so no prefix-match can correctly
+            # map — fall through to the native pydantic error, which shows the
+            # full nested path.
+            if not any(isinstance(part, int) for part in loc):
+                candidate = tuple(loc)
+                while candidate:
+                    missing_arguments = self.children_recursive.filter_by(keys_prefix=self.keys + candidate)
+                    # An Argument that already has tokens cannot be "missing";
+                    # the stripping heuristic has wandered into a populated sibling.
+                    missing_arguments = [a for a in missing_arguments if not a.tokens]
+                    if missing_arguments:
+                        raise MissingArgumentError(argument=missing_arguments[0]) from exc
+                    if len(candidate) == 1:
+                        break
+                    # For discriminated unions pydantic prepends the discriminator
+                    # value (e.g. loc=("cat", "rainbow")). Strip leading elements
+                    # until we find a real child Argument.
+                    candidate = candidate[1:]
+            # Fall through to ValidationError.
+
+        if isinstance(exc, pydantic.ValidationError):
+            raise ValidationError(exception_message=str(exc), argument=self) from exc
+        else:
+            raise exc

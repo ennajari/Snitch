@@ -1,0 +1,488 @@
+#!/usr/bin/env python3
+# --------------------( LICENSE                            )--------------------
+# Copyright (c) 2014-2026 Beartype authors.
+# See "LICENSE" for further details.
+
+'''
+Project-wide **object getters** (i.e., low-level callables querying various
+properties of arbitrary objects in a general-purpose manner).
+
+This private submodule is *not* intended for importation by downstream callers.
+'''
+
+# ....................{ IMPORTS                            }....................
+from beartype.roar._roarexc import _BeartypeUtilObjectNameException
+from typing import (
+    Any,
+    Optional,
+)
+
+# ....................{ GETTERS ~ name                     }....................
+def get_object_name(
+    # Mandatory parameters.
+    obj: Any,
+
+    # Optional parameters.
+    is_fallback_type_name: bool = False,
+) -> str:
+    '''
+    **Fully-qualified name** (i.e., ``.``-delimited unambiguously identifying
+    string) of the passed object if this object defines either the
+    ``__qualname__`` or ``__name__`` dunder attributes, fully-qualified name of
+    the type of this object if the passed ``is_fallback_type_name`` parameter is
+    :data:`True`, *or* raise an exception otherwise (i.e., if this object
+    defines *no* such dunder attributes and ``is_fallback_type_name`` is
+    :data:`False`).
+
+    This getter specifically returns a string comprising (in order):
+
+    * If this object is a callable or class:
+
+      #. If this object is transitively declared by a module, the absolute name
+         of that module.
+      #. If this object is transitively declared by another object (e.g., class,
+         callable) and thus nested in that object, the unqualified basenames of
+         all parent objects transitively declaring this object in that module.
+      #. Lexically scoped basename of this object (i.e., whichever of the
+         ``__qualname__`` or ``__name__`` dunder attributes is defined on this
+         object).
+
+    * Else if the passed ``is_fallback_type_name`` parameter is :data:`True`:
+
+      #. If the type of this object is transitively declared by a module, the
+         absolute name of that module.
+      #. If the type of this object is transitively declared by another object
+         (e.g., class, callable) and thus nested in that object, the unqualified
+         basenames of all parent objects transitively declaring this type in
+         that module.
+      #. Lexically scoped basename of the type of this object.
+
+    * Else, raise an exception.
+
+    Caveats
+    -------
+    **This getter performs expensive string concatenation in the common case**
+    in which this object is lexically defined inside a module. This getter
+    should thus either be called at most once per object *or* effectively
+    memoized by all higher-level callables calling this getter.
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+    is_fallback_type_name : bool, default: False
+        :data:`True` only if this getter falls back to returning the
+        fully-qualified name of the type of the passed object if this object is
+        neither a callable or class. Doing so improves the generality of this
+        getter and is thus suitable for general-purpose use cases in which the
+        caller *cannot* guarantee this object to either be a callable or class.
+        Specifically:
+
+        * If :data:`True`, this getter is guaranteed to *never* raise an
+          exception (regardless of the type of this object).
+        * If :data:`False`, this getter is guaranteed to effectively *always*
+          raise an exception if this object is neither a callable nor class.
+
+        Defaults to :data:`False` for strictness.
+
+    Returns
+    -------
+    str
+        Fully-qualified name of this object.
+
+    Raises
+    ------
+    _BeartypeUtilObjectNameException
+        If ``is_fallback_type_name`` is :data:`False` *and* this object defines
+        neither the ``__qualname__`` nor ``__name__`` dunder attributes.
+    '''
+    assert isinstance(is_fallback_type_name, bool), (
+        f'{repr(is_fallback_type_name)} not boolean.')
+
+    # Avoid circular import dependencies.
+    from beartype._cave._cavefast import CallableOrClassTypes
+    from beartype._util.module.utilmodget import get_object_module_name_or_none
+
+    # If...
+    if (
+        # The caller requests that this getter fall back to returning the
+        # fully-qualified name of the type of the passed object when this object
+        # is neither a callable nor class *AND*...
+        is_fallback_type_name and
+        # This object is indeed neither a callable nor class...
+        not isinstance(obj, CallableOrClassTypes)
+    ):
+        # Reduce this object to the type of this object, guaranteeing that the
+        # lower-level get_object_basename_scoped() getter called below raises
+        # *NO* exception in this common case.
+        obj = type(obj)
+    # Else, this object is either a callable or class.
+
+    # Lexically scoped name of this object excluding this module name if this
+    # object is named *OR* raise an exception otherwise.
+    object_basename_scoped = get_object_basename_scoped(obj)
+
+    # Fully-qualified name of the module declaring this object if this object
+    # is defined by a module *OR* "None" otherwise (e.g., if this object is
+    # defined dynamically in-memory outside any module).
+    object_module_name = get_object_module_name_or_none(obj)
+
+    # Return either...
+    return (
+        # If this module name exists, the "."-delimited concatenation of this
+        # module and lexically scoped name;
+        f'{object_module_name}.{object_basename_scoped}'
+        if object_module_name is not None else
+        # Else, this lexically scoped name as is.
+        object_basename_scoped
+    )
+
+# ....................{ GETTERS ~ basename : qualified     }....................
+#FIXME: Currently unused but preserved for posterity. *shrug*
+#FIXME: Unit test us up, please.
+# def get_object_basename_qualified_or_none(obj: Any) -> Optional[str]:
+#     '''
+#     **Lexically qualified basename** (i.e., ``.``-delimited string unambiguously
+#     identifying all lexical scopes encapsulating) the passed object if this
+#     object defines the ``__qualname__`` dunder attribute *or* :data:`None`
+#     otherwise (i.e., if this object defines *no* such attribute).
+#
+#     Specifically, this name comprises (in order):
+#
+#     #. If this object is transitively declared by another object (e.g., class,
+#        callable) and thus nested in that object, the unqualified basenames of
+#        all parent objects transitively declaring this object in that module:
+#        e.g.,
+#
+#        .. code-block:: python
+#
+#           >>> from beartype._util.utilobjget import get_object_basename_scoped
+#           >>> def muh_func():
+#           ...     def muh_closure(): pass
+#           ...     return muh_closure()
+#           >>> get_object_basename_scoped(muh_func)
+#           'muh_func.<locals>.muh_closure'  # <-- bad Python
+#
+#     #. Unqualified basename of this object.
+#
+#     Caveats
+#     -------
+#     **The higher-level** :func:`.get_object_name` **getter should typically be
+#     called instead of this lower-level getter.** This getter unsafely:
+#
+#     * Requires the passed object to declare dunder attributes *not* generally
+#       declared by arbitrary instances of user-defined classes.
+#     * Omits the fully-qualified name of the module transitively declaring this
+#       object and thus fails to return fully-qualified names.
+#     * Contains one meaningless ``"<locals>"`` placeholder substring conveying
+#       *no* meaningful semantics for each parent callable nesting this object.
+#
+#     **This high-level getter should always be called in lieu of directly
+#     accessing the low-level** ``__qualname__`` **dunder attribute on objects.**
+#     That attribute is *not* guaranteed to exist.
+#
+#     Parameters
+#     ----------
+#     obj : object
+#         Object to be inspected.
+#
+#     Returns
+#     -------
+#     Optional[str]
+#         Either:
+#
+#         * If this object defines the ``__qualname__`` dunder attribute, the
+#           value of that attribute.
+#         * Else, :data:`None`.
+#     '''
+#
+#     # Tout-puissant one-liner!
+#     return getattr(obj, '__qualname__', None)
+
+# ....................{ GETTERS ~ basename : scoped        }....................
+def get_object_basename_scoped(obj: Any) -> str:
+    '''
+    **Lexically scoped basename** (i.e., ``.``-delimited string unambiguously
+    identifying all lexical scopes encapsulating) the passed object if this
+    object defines either the ``__qualname__`` or ``__name__`` dunder attributes
+    *or* raise an exception otherwise (i.e., if this object defines *no* such
+    attributes).
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    str
+        Lexically scoped basename of this object.
+
+    Raises
+    ------
+    _BeartypeUtilObjectNameException
+        If this object defines neither ``__qualname__`` *nor* ``__name__``
+        dunder attributes.
+
+    See Also
+    --------
+    :func:`.get_object_basename_scoped_or_none`
+        Further details.
+    '''
+
+    # Fully-qualified name of this object excluding its module name.
+    object_scoped_name = get_object_basename_scoped_or_none(obj)
+
+    # If this object is unnamed, raise a human-readable exception. The default
+    # "AttributeError" exception raised by attempting to directly access either
+    # the "obj.__name__" or "obj.__qualname__" attributes is sufficiently
+    # non-explanatory to warrant replacement by our explanatory exception.
+    if object_scoped_name is None:
+        raise _BeartypeUtilObjectNameException(
+            f'{repr(obj)} unnamed '
+            f'(i.e., declares neither "__name__" nor "__qualname__" '
+            f'dunder attributes).'
+        )
+    # Else, this object is named.
+
+    # Remove all "<locals>" placeholder substrings as discussed above.
+    return object_scoped_name.replace('<locals>.', '')
+
+
+#FIXME: Unit test us up, please.
+def get_object_basename_scoped_or_none(obj: Any) -> Optional[str]:
+    '''
+    **Lexically scoped basename** (i.e., ``.``-delimited string unambiguously
+    identifying all lexical scopes encapsulating) the passed object if this
+    object defines either the ``__qualname__`` or ``__name__`` dunder attributes
+    *or* :data:`None` otherwise (i.e., if this object defines *no* such
+    attributes).
+
+    Specifically, this name comprises (in order):
+
+    #. If this object is transitively declared by another object (e.g., class,
+       callable) and thus nested in that object, the unqualified basenames of
+       all parent objects transitively declaring this object in that module.
+       For usability, these basenames intentionally omit the meaningless
+       placeholder ``"<locals>"`` substrings artificially injected by Python
+       itself into the original ``__qualname__`` instance variable underlying
+       this getter: e.g.,
+
+       .. code-block:: python
+
+          >>> from beartype._util.utilobjget import get_object_basename_scoped
+          >>> def muh_func():
+          ...     def muh_closure(): pass
+          ...     return muh_closure()
+          >>> muh_func().__qualname__
+          'muh_func.<locals>.muh_closure'  # <-- bad Python
+          >>> get_object_basename_scoped(muh_func)
+          'muh_func.muh_closure'  # <----------- good @beartype
+
+    #. Unqualified basename of this object.
+
+    Caveats
+    -------
+    **The higher-level** :func:`.get_object_name` **getter should typically be
+    called instead of this lower-level getter.** This getter unsafely:
+
+    * Requires the passed object to declare dunder attributes *not* generally
+      declared by arbitrary instances of user-defined classes.
+    * Omits the fully-qualified name of the module transitively declaring this
+      object and thus fails to return fully-qualified names.
+
+    **This high-level getter should always be called in lieu of directly
+    accessing the low-level** ``__qualname__`` **dunder attribute on objects.**
+    That attribute contains one meaningless ``"<locals>"`` placeholder
+    substring conveying *no* meaningful semantics for each parent callable
+    lexically nesting this object.
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    Optional[str]
+        Either:
+
+        * If this object defines at least one of the ``__qualname__`` or
+          ``__name__`` dunder attributes, the lexically scoped basename of this
+          object.
+        * Else, :data:`None`.
+    '''
+
+    # Fully-qualified name of this object excluding its module name as follows:
+    # * If this object defines the "__qualname__" dunder attribute whose value
+    #   is the "."-delimited concatenation of the unqualified basenames of all
+    #   parent objects transitively declaring this object, that value with all
+    #   meaningless "<locals>" placeholder substrings removed. If this object
+    #   is a nested non-method callable (i.e., pure-Python function nested in
+    #   one or more parent pure-Python callables), that value contains one such
+    #   placeholder for each parent callable containing this callable. Since
+    #   placeholders convey no meaningful semantics, placeholders are removed.
+    # * Else if this object defines the "__name__" dunder attribute whose value
+    #   is the unqualified basename of this object, that value.
+    # * Else, "None".
+    basename_scoped = getattr(
+        obj, '__qualname__', getattr(
+            obj, '__name__', None))
+
+    # Return either...
+    return (
+        # If this name exists, all "<locals>" placeholder substrings globally
+        # removed from this name as discussed above;
+        basename_scoped.replace('<locals>.', '')
+        if basename_scoped else
+        # Else, either "None" or the empty string.
+        basename_scoped
+    )
+
+# ....................{ GETTERS ~ filename                 }....................
+def get_object_filename_or_none(obj: object) -> Optional[str]:
+    '''
+    Filename of the module or script physically declaring the passed object if
+    this object is either a callable or class physically declared on-disk *or*
+    :data:`None` otherwise (i.e., if this object is neither a callable nor
+    class *or* is either a callable or class dynamically declared in-memory).
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    Optional[str]
+        Either:
+
+        * If this object is either a callable or class physically declared
+          on-disk, the filename of the module or script physically declaring
+          this object.
+        * Else, :data:`None`.
+    '''
+
+    # Avoid circular import dependencies.
+    from beartype._util.cls.utilclsget import get_type_filename_or_none
+    from beartype._util.func.utilfuncfile import get_func_filename_or_none
+    from beartype._util.func.utilfunctest import is_func_codeobjable
+
+    # Return either...
+    return (
+        # If this object is a pure-Python class, the absolute filename of the
+        # source module file defining that class if that class was defined
+        # on-disk *OR* "None" otherwise (i.e., if that class was defined
+        # in-memory);
+        get_type_filename_or_none(obj)
+        if isinstance(obj, type) else
+        # If this object is a pure-Python callable, the absolute filename of the
+        # absolute filename of the source module file defining that callable if
+        # that callable was defined on-disk *OR* "None" otherwise (i.e., if that
+        # callable was defined in-memory);
+        get_func_filename_or_none(obj)
+        if is_func_codeobjable(obj) else
+        # Else, "None".
+        None
+    )
+
+# ....................{ GETTERS ~ type                     }....................
+def get_object_type_unless_type(obj: object) -> type:
+    '''
+    Either the passed object if this object is a class *or* the class of this
+    object otherwise (i.e., if this object is *not* a class).
+
+    Note that this function *never* raises exceptions on arbitrary objects, as
+    the :obj:`type` builtin wisely returns itself when passed itself: e.g.,
+
+    .. code-block:: python
+
+        >>> type(type(type)) is type
+        True
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    type
+        Type of this object.
+    '''
+
+    return obj if isinstance(obj, type) else type(obj)
+
+# ....................{ GETTERS ~ type : name              }....................
+#FIXME: Woefully insufficient implementation. The name of this getter is
+#perfect. The implementation, however, leaves much to be desired. The issue is
+#the low-level get_object_type_basename() getter internally called by this
+#high-level getter, which is *DEFINITELY* wrong. get_object_type_basename()
+#should be refactored as follows:
+#* Rename get_object_type_basename() to get_object_type_basename_scoped().
+#* Redefine get_object_type_basename() as follows:
+#      def get_object_type_basename(obj: object) -> str:
+#          return get_object_basename_scoped(get_object_type_unless_type(obj))
+#
+#Trivial, obviously. But this warrants testing, also obviously. *shrug & sigh*
+def get_object_type_name(obj: object) -> str:
+    '''
+    **Fully-qualified name** (i.e., ``.``-delimited name prefixed by the
+    declaring module) of either passed object if this object is a type *or*
+    the type of this object otherwise (i.e., if this object is *not* a type).
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    str
+        Fully-qualified name of the type of this object.
+    '''
+
+    # Avoid circular import dependencies.
+    from beartype._util.module.utilmodget import (
+        get_object_type_module_name_or_none)
+
+    # Type of this object.
+    cls = get_object_type_unless_type(obj)
+
+    # Unqualified name of this type.
+    cls_basename = get_object_type_basename(cls)
+
+    # Fully-qualified name of the module defining this class if this class is
+    # defined by a module *OR* "None" otherwise.
+    cls_module_name = get_object_type_module_name_or_none(cls)
+
+    # Return either...
+    return (
+        # The "."-delimited concatenation of this class basename and module
+        # name if this module name exists.
+        f'{cls_module_name}.{cls_basename}'
+        if cls_module_name is not None else
+        # This class basename as is otherwise.
+        cls_basename
+    )
+
+
+def get_object_type_basename(obj: object) -> str:
+    '''
+    **Unqualified basename** (i.e., non-``.``-delimited trailing component) of
+    either the passed object if this object is a type *or* the type of this
+    object otherwise (i.e., if this object is *not* a type).
+
+    Parameters
+    ----------
+    obj : object
+        Object to be inspected.
+
+    Returns
+    -------
+    str
+        Unqualified basename of this type.
+    '''
+
+    # Elegant simplicity diminishes aggressive tendencies.
+    return get_object_type_unless_type(obj).__name__

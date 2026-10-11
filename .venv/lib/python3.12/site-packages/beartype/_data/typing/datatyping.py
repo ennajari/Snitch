@@ -1,0 +1,960 @@
+#!/usr/bin/env python3
+# --------------------( LICENSE                            )--------------------
+# Copyright (c) 2014-2026 Beartype authors.
+# See "LICENSE" for further details.
+
+'''
+Project-wide **type hints** (i.e., PEP-compliant type hints annotating callables
+and classes declared throughout this codebase, either for compliance with
+:pep:`561`-compliant static type checkers like :mod:`mypy` or simply for
+documentation purposes).
+
+This private submodule is *not* intended for importation by downstream callers.
+'''
+
+# ....................{ IMPORTS                            }....................
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# CAUTION: This submodule *CANNOT* import from the companion "datatypingport"
+# submodule due to circular import dependencies between these two submodules.
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+import beartype #  <-- satisfy mypy [note to self: i can't stand you, mypy]
+from ast import (
+    AST,
+    AsyncFunctionDef,
+    ClassDef,
+    FunctionDef,
+)
+from beartype._cave._cavefast import (
+    CallableCodeObjectType,
+    FunctionType,
+    HintPep484749RefObjectType,
+    HintPep604Type,
+    HintPep612ParamSpecType,
+    HintPep646TypeVarTuplePackedType,
+    HintPep646692UnpackedType,
+    # HintPep695TypeAliasTypes,
+    MethodBoundInstanceOrClassType,
+    MethodDecoratorClassType,
+    MethodDecoratorPropertyType,
+    MethodDecoratorStaticType,
+    ModuleType,
+    WeakrefCallableType,
+)
+from beartype._data.func.datafuncarg import ARG_VALUE_UNPASSED
+from beartype._data.hint.sign.datahintsigncls import HintSign
+from beartype._data.kind.datakindiota import Iota
+from collections import ChainMap
+from collections.abc import (
+    Callable,
+    Collection,
+    Iterable,
+    Iterator,
+    Mapping,
+    Set,
+)
+from importlib.abc import Loader
+from pathlib import Path
+from types import (
+    CodeType,
+    FrameType,
+    GeneratorType,
+)
+from typing import (
+    Any,
+    Literal,
+    TypeAlias,
+    TypeVar,
+    Union,
+)
+
+#FIXME: Doesn't seem to help. mypy 0.19.0 appears to busted, sadly. We sigh.
+# # If a static type-checker is type-checking us, import circular imports. Ugh!
+# if TYPE_CHECKING:
+#     from beartype._check.forward.reference._cls.fwdrefabc import (
+#         BeartypeForwardRefABC)
+# # Else, Python is running us. Bless ye, Python. Bless ye.
+
+# ....................{ AST                                }....................
+NodeCallable = FunctionDef | AsyncFunctionDef
+'''
+PEP-compliant type hint matching a **callable node** (i.e., abstract syntax tree
+(AST) node encapsulating the definition of a pure-Python function or method that
+is either synchronous or asynchronous).
+'''
+
+
+NodeDecoratable = NodeCallable | ClassDef
+'''
+PEP-compliant type hint matching a **decoratable node** (i.e., abstract syntax
+tree (AST) node encapsulating the definition of a pure-Python object supporting
+decoration by one or more ``"@"``-prefixed decorations, including both
+pure-Python classes *and* callables).
+'''
+
+
+NodeVisitResult = AST | list[AST] | None
+'''
+PEP-compliant type hint matching a **node visitation result** (i.e., object
+returned by any visitor method of an :class:`ast.NodeVisitor` subclass).
+
+Specifically, this hint matches either:
+
+* A single node, in which case a visitor method has effectively preserved the
+  currently visited node passed to that method in the AST.
+* A list of zero or more nodes, in which case a visitor method has replaced the
+  currently visited node passed to that method with those nodes in the AST.
+* :data:`None`, in which case a visitor method has effectively destroyed the
+  currently visited node passed to that method from the AST.
+'''
+
+
+NodesList = list[AST]
+'''
+PEP-compliant type hint matching an **abstract syntax tree (AST) node list**
+(i.e., list of zero or more AST nodes).
+'''
+
+# ....................{ BOOL                               }....................
+BoolTristate = Literal[True, False, None]
+'''
+PEP-compliant type hint matching a **tri-state boolean** whose value may be
+either:
+
+* :data:`True`.
+* :data:`False`.
+* :data:`None`, implying that the actual value of this boolean is contextually
+  dependent on context-sensitive program state.
+'''
+
+
+BoolTristateUnpassable = Literal[True, False, None, ARG_VALUE_UNPASSED]  # type: ignore[valid-type]
+'''
+PEP-compliant type hint matching an **unpassable tri-state boolean** whose value
+may be either:
+
+* :data:`True`.
+* :data:`False`.
+* :data:`None`, implying that the actual value of this boolean is contextually
+  dependent on context-sensitive program state.
+* :data:`.ARG_VALUE_UNPASSED`, enabling any callable that annotates a tri-state
+  boolean parameter by this type hint to deterministically identify whether the
+  caller explicitly passed that parameter or not. Since the caller may
+  explicitly pass :data:`None` as a valid value, testing that parameter against
+  :data:`None` does *not* suffice to decide this decision problem.
+'''
+
+# ....................{ CALLABLE ~ early                   }....................
+# Callable-specific type hints required by subsequent type hints below.
+
+CallableAny = Callable[..., Any]
+'''
+PEP-compliant type hint matching any callable in a manner explicitly matching
+all possible callable signatures.
+'''
+
+# ....................{ BEARTYPE ~ decorator               }....................
+BeartypeableT = TypeVar(
+    'BeartypeableT',
+    # The @beartype decorator decorates objects that are either...
+    #
+    # Note that this hint *MUST* be defined as an obsolete PEP 484-compliant old
+    # union rather than a PEP 604-compliant new union to avoid static
+    # type-checker complaints resembling:
+    #     beartype/_data/typing/datatyping.py:267: error: Type variable
+    #     "beartype._data.typing.datatyping.BeartypeableT" is invalid as target
+    #     for type alias  [misc]
+    bound=Union[
+        # Arbitrary class *OR*...
+        type,
+
+        # Arbitrary callable *OR*...
+        CallableAny,
+
+        # C-based unbound class method descriptor (i.e., a pure-Python unbound
+        # function decorated by the builtin @classmethod decorator) *OR*...
+        MethodDecoratorClassType,
+
+        # C-based unbound property method descriptor (i.e., a pure-Python
+        # unbound function decorated by the builtin @property decorator) *OR*...
+        MethodDecoratorPropertyType,
+
+        # C-based unbound static method descriptor (i.e., a pure-Python
+        # unbound function decorated by the builtin @staticmethod decorator).
+        MethodDecoratorStaticType,
+
+        #FIXME: There's a *TON* more that we can and should list here now,
+        #including:
+        #* The PEP 702-compliant "warnings.deprecated" type.
+        #* Whatever type underlies the context managers created and returned by
+        #  the @contextlib.contextmanager decorator.
+        #* Whatever type underlies the callables created and returned by the
+        #  @functools.lru_cache decorator.
+        #* Probably heaps more, too! Inspect the "beartype._decor._nontype"
+        #  subpackage to fully grep everything @beartype now supports.
+
+        #FIXME: Currently unused, but preserved for posterity.
+        # # C-based bound method descriptor (i.e., a pure-Python unbound
+        # # function bound to an object instance on Python's instantiation of that
+        # # object) *OR*...
+        # MethodBoundInstanceOrClassType,
+    ],
+)
+'''
+:pep:`484`-compliant **generic beartypeable type variable** (i.e., type hint
+matching any arbitrary object decoratable by the :func:`beartype.beartype`
+decorator, including pure-Python callables and classes, C-based descriptors, and
+even more exotic objects).
+
+This type variable notifies static analysis performed by both static type
+checkers (e.g., :mod:`mypy`) and type-aware IDEs (e.g., VSCode) that the
+:func:`beartype.beartype` decorator preserves:
+
+* Callable signatures by creating and returning callables with the same
+  signatures as passed callables.
+* Class hierarchies by preserving passed classes with respect to inheritance,
+  including metaclasses and method-resolution orders (MRO) of those classes.
+'''
+
+
+BeartypeConfedDecorator = Callable[[BeartypeableT], BeartypeableT]
+'''
+PEP-compliant type hint matching a **configured beartype decorator** (i.e.,
+closure created and returned from the :func:`beartype.beartype` decorator when
+passed a beartype configuration via the optional ``conf`` parameter rather than
+an arbitrary object to be decorated via the optional ``obj`` parameter).
+'''
+
+
+# Note that this hint *MUST* be defined as an obsolete PEP 484-compliant old
+# union rather than a PEP 604-compliant new union to avoid static type-checker
+# complaints resembling:
+#     beartype/_decor/decormain.py:106: error: Variable
+#         "beartype._data.typing.datatyping.BeartypeReturn" is not valid as a
+#         type  [valid-type]
+#     beartype/_decor/decormain.py:106: note: See
+#         https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+BeartypeReturn = Union[BeartypeableT, BeartypeConfedDecorator]
+'''
+:pep:`484`-compliant type hint matching any possible value returned by any
+invocation of the :func:`beartype.beartype` decorator, including calls to that
+decorator in both configuration and decoration modes.
+'''
+
+# ....................{ CALLABLE                           }....................
+# Callable-specific type hints *NOT* required by subsequent type hints below.
+
+CallableRaiser = Callable[[object], None]
+'''
+PEP-compliant type hint matching a **raiser callable** (i.e., arbitrary callable
+accepting a single arbitrary object and either raising an exception or emitting
+a warning rather than returning any value).
+'''
+
+
+CallableRaiserOrTester = Callable[[object], bool | None]
+'''
+PEP-compliant type hint matching a **raiser or tester callable** (i.e.,
+arbitrary callable accepting a single arbitrary object and either returning no
+value or returning either :data:`True` if that object satisfies an arbitrary
+constraint *or* :data:`False` otherwise).
+'''
+
+
+CallableStrFormat = Callable[..., str]
+'''
+PEP-compliant type hint matching the signature of the standard
+:meth:`str.format` method.
+'''
+
+
+CallableTester = Callable[[object], bool]
+'''
+PEP-compliant type hint matching a **tester callable** (i.e., arbitrary callable
+accepting a single arbitrary object and returning either :data:`True` if that
+object satisfies an arbitrary constraint *or* :data:`False` otherwise).
+'''
+
+
+# ....................{ CALLABLE ~ args                    }....................
+CallableMethodGetitemArg = int | slice
+'''
+PEP-compliant type hint matching the standard type of the single positional
+argument accepted by the ``__getitem__` dunder method.
+'''
+
+# ....................{ CALLABLE ~ code object             }....................
+Codeobjable = Callable | CodeType | FrameType | GeneratorType
+'''
+PEP-compliant type hint matching a **codeobjable** (i.e., pure-Python object
+directly associated with a code object and thus safely passable as the first
+parameter to the :func:`beartype._util.func.utilfunccodeobj.get_func_codeobject`
+getter retrieving the code object associated with this codeobjable).
+
+Specifically, this hint matches:
+
+* Code objects.
+* Pure-Python callables, including generators (but *not* C-based callables,
+  which lack code objects).
+* Pure-Python callable stack frames.
+'''
+
+
+FuncLocalParentCodeObjectWeakref = (
+    WeakrefCallableType[CallableCodeObjectType] | None)
+'''
+:pep:`484`-compliant type hint matching either **code object weak references**
+(i.e., C-based :class:`weakref.ref` objects weakly referring to C-based code
+objects underlying pure-Python callables) *or* the :data:`None` singleton.
+
+This hint specifically matches the value of:
+
+* The low-level
+  :attr:`beartype._check.forward.reference._cls.fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
+  class variable.
+* All optional ``func_local_parent_codeobj_weakref`` parameters accepted by
+  higher-level functions distributed throughout the codebase.
+'''
+
+# ....................{ CALLABLE ~ decorator               }....................
+Decoratee = type | Callable
+'''
+:pep:`585`-compliant type hint matching a **decoratee** (i.e., pure-Python
+object being directly decorated by some pure-Python decorator).
+
+Equivalently, this hint matches all pure-Python callables and classes.
+Technically, other objects *can* be indirectly decorated by a decorator (e.g.,
+by that decorator internally reversing the order of decorator chaining such that
+that decorator is effectively repositioned below those objects in some chain of
+decorators). Pragmatically, decorators can only directly decorate pure-Python
+callables and classes.
+'''
+
+# ....................{ CALLABLE ~ descriptor              }....................
+MethodDescriptorBuiltin = (
+    # C-based unbound class method descriptor (i.e., a pure-Python unbound
+    # function decorated by the builtin @classmethod decorator).
+    MethodDecoratorClassType |
+
+    # C-based unbound property method descriptor (i.e., a pure-Python unbound
+    # function decorated by the builtin @property decorator).
+    MethodDecoratorPropertyType |
+
+    # C-based unbound static method descriptor (i.e., a pure-Python unbound
+    # function decorated by the builtin @staticmethod decorator).
+    MethodDecoratorStaticType
+)
+'''
+PEP-compliant type hint matching any **builtin unbound method descriptor**
+(i.e., C-based decorator type builtin to Python whose instance is typically
+uncallable but encapsulates a callable pure-Python method).
+'''
+
+
+MethodDescriptorNondata = (
+    # C-based unbound class method descriptor (i.e., a pure-Python unbound
+    # function decorated by the builtin @classmethod decorator).
+    MethodDecoratorClassType |
+
+    # C-based unbound static method descriptor (i.e., a pure-Python unbound
+    # function decorated by the builtin @staticmethod decorator).
+    MethodDecoratorStaticType |
+
+    # C-based bound method descriptor (i.e., a pure-Python unbound function
+    # bound to an object instance on Python's instantiation of that object).
+    MethodBoundInstanceOrClassType
+)
+'''
+PEP-compliant type hint matching any **builtin method non-data descriptor**
+(i.e., C-based descriptor builtin to Python defining only the ``__get__()``
+dunder method, encapsulating read-only access to some kind of method).
+'''
+
+# ....................{ COLLECTION                         }....................
+CollectionStrs = Collection[str]
+'''
+PEP-compliant type hint matching *any* collection of zero or more strings.
+'''
+
+# ....................{ CHAINMAP                           }....................
+ChainMapStrToAny = ChainMap[str, Any]
+'''
+PEP-compliant type hint matching a chain map mapping from strings to arbitrary
+objects.
+'''
+
+# ....................{ ITERABLE                           }....................
+IterableStrs = Iterable[str]
+'''
+PEP-compliant type hint matching *any* iterable of zero or more strings.
+'''
+
+# ....................{ ITERATOR                           }....................
+EnumeratorItem = tuple[int, object]
+'''
+PEP-compliant type hint matching *any* **enumerator item** (i.e., item of the
+iterator created and returned by the :func:`enumerate` builtin). An enumerator
+item is a 2-tuple of the form ``(item_index, item)``, where:
+
+* ``item_index`` is the 0-based index of the currently enumerated item.
+* ``item`` is the currently enumerated item.
+'''
+
+
+Enumerator = Iterator[EnumeratorItem]
+'''
+PEP-compliant type hint matching *any* **enumerator** (i.e., arbitrary iterator
+satisfying the :func:`enumerate` protocol). This iterator is expected to yield
+zero or more 2-tuples of the form ``(item_index, item)``, where:
+
+* ``item_index`` is the 0-based index of the currently enumerated item.
+* ``item`` is the currently enumerated item.
+'''
+
+# ....................{ LIST                               }....................
+ListStrs = list[str]
+'''
+:pep:`585`-compliant type hint matching a list of strings.
+'''
+
+# ....................{ MAPPING                            }....................
+MappingStrToAny = Mapping[str, object]
+'''
+PEP-compliant type hint matching a mapping mapping from keys to arbitrary
+objects.
+'''
+
+# ....................{ OBJECT                             }....................
+GetObjectAttrsDir = list[str] | None
+'''
+PEP-compliant type hint matching the ``obj_dir`` parameter accepted by all
+**object attribute getters** (e.g.,
+:func:`beartype._util.utilobjget.get_object_attr_name_to_value`).
+'''
+
+
+GetObjectAttrsPredicate = Callable[[str, object], bool] | None
+'''
+PEP-compliant type hint matching the ``predicate`` parameter accepted by all
+**object attribute getters** (e.g.,
+:func:`beartype._util.utilobjget.get_object_attr_name_to_value`).
+'''
+
+# ....................{ PATH                               }....................
+CommandWords = IterableStrs
+'''
+PEP-compliant type hint matching **command words** (i.e., an iterable of one or
+more shell words comprising a shell command, suitable for passing as the
+``command_words`` parameter accepted by most callables declared in the
+test-specific :mod:`beartype_test._util.command.pytcmdrun` submodule).
+'''
+
+# ....................{ SET                                }....................
+SetStrs = set[str]
+'''
+:pep:`585`-compliant type hint matching *any* builtin set of zero or more
+strings.
+'''
+
+# ....................{ SET ~ abstract                     }....................
+AbstractSetTypes = Set[type]
+'''
+:pep:`585`-compliant type hint matching *any* abstract set of zero or more
+types.
+'''
+
+# ....................{ SET ~ frozenset                    }....................
+FrozenSetInts = frozenset[int]
+'''
+PEP-compliant type hint matching *any* frozen set of zero or more integers.
+'''
+
+
+FrozenSetStrs = frozenset[str]
+'''
+PEP-compliant type hint matching *any* frozen set of zero or more strings.
+'''
+
+
+FrozenSetTypes = frozenset[type]
+'''
+PEP-compliant type hint matching *any* frozen set of zero or more types.
+'''
+
+# ....................{ DICT                               }....................
+DictTypeToAny = dict[type, Any]
+'''
+PEP-compliant type hint matching a dictionary mapping from types to arbitrary
+objects.
+'''
+
+# ....................{ DICT ~ str                         }....................
+DictStrToAny = dict[str, Any]
+'''
+:pep:`585`-compliant type hint matching a dictionary mapping from strings to
+arbitrary objects.
+'''
+
+
+LexicalScope = DictStrToAny
+'''
+:pep:`585`-compliant type hint matching a **lexical scope** (i.e., dictionary
+mapping from the relative unqualified name to value of each locally or globally
+scoped attribute accessible to a callable or class).
+'''
+
+
+DictStrToType = dict[str, type]
+'''
+PEP-compliant type hint matching a dictionary mapping from strings to types.
+'''
+
+
+DictStrToFrozenSetStrs = dict[str, FrozenSetStrs]
+'''
+PEP-compliant type hint matching a dictionary mapping from strings to frozen
+sets of strings.
+'''
+
+# ....................{ SIGN                               }....................
+HintSignOrNoneOrSentinel = HintSign | None | Iota
+'''
+PEP-compliant type hint matching either a **sign** (i.e., :class:`.HintSign`
+object uniquely identifying type hint), the :data:`None` singleton, or the
+sentinel placeholder.
+'''
+
+# ....................{ SIGN ~ container                   }....................
+FrozenSetHintSign = frozenset[HintSign]
+'''
+PEP-compliant type matching matching a frozen set of **signs** (i.e.,
+:class:`.HintSign` objects uniquely identifying type hints).
+'''
+
+
+IterableHintSign = Iterable[HintSign]
+'''
+PEP-compliant type matching matching a iterable of **signs** (i.e.,
+:class:`.HintSign` objects uniquely identifying type hints).
+'''
+
+# ....................{ SIGN ~ container : dict            }....................
+DictStrToHintSign = dict[str, HintSign]
+'''
+PEP-compliant type hint matching a dictionary mapping from strings to **signs**
+(i.e., :class:`.HintSign` objects uniquely identifying type hints).
+'''
+
+
+HintSignTrie = dict[str, Union[HintSign, 'HintSignTrie']]
+'''
+PEP-compliant type hint matching a **sign trie** (i.e.,
+dictionary-of-dictionaries tree data structure enabling efficient mapping from
+the machine-readable representations of type hints created by an arbitrary
+number of type hint factories defined by an external third-party package to
+their identifying sign).
+'''
+
+
+HintSignToCallableStrFormat = dict[HintSign, CallableStrFormat]
+'''
+PEP-compliant type hint matching a **sign-to-string-formatter map** (i.e.,
+dictionary mapping from signs uniquely identifying type hints to
+:meth:`str.format` methods bound to code snippets type-checking various aspects
+of those type hints).
+'''
+
+# ....................{ STRING                             }....................
+StrOrNone = str | None
+'''
+:pep:`604`-compliant type hint matching either a string or :data:`None`.
+'''
+
+# ....................{ TUPLE                              }....................
+TupleStrs = tuple[str, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of strings.
+'''
+
+
+TupleStrAndStr = tuple[str, str]
+'''
+:pep:`585`-compliant type hint matching a 2-tuple whose first and second items
+are both strings. While ad-hoc, this data structure has proven useful throughout
+the codebase.
+'''
+
+
+TupleStrOrNoneAndStr = tuple[StrOrNone, str]
+'''
+:pep:`585`-compliant type hint matching a 2-tuple whose:
+
+* First item is either a string or :data:`None`.
+* Second item is a string.
+
+While ad-hoc, this data structure has proven useful throughout the codebase.
+'''
+
+# ....................{ TYPE                               }....................
+IterableTypes = Iterable[type]
+'''
+PEP-compliant type hint matching an iterable of zero or more types.
+'''
+
+
+SetTypes = set[type]
+'''
+PEP-compliant type hint matching a mutable set of zero or more types.
+'''
+
+
+TupleTypes = tuple[type, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of zero or more classes.
+
+Equivalently, this hint matches all tuples passable as the second parameters to
+the :func:`isinstance` and :func:`issubclass` builtins.
+'''
+
+# ....................{ TYPE ~ or                          }....................
+SetOrTupleTypes = TupleTypes | AbstractSetTypes
+'''
+PEP-compliant type hint matching a set *or* tuple of zero or more types.
+'''
+
+
+TypeOrCallable = Decoratee
+'''
+:pep:`585`-compliant type hint matching a callable *or* type.
+'''
+
+
+TypeOrTupleTypes = type | TupleTypes
+'''
+PEP-compliant type hint matching either a type *or* tuple of zero or more types.
+'''
+
+
+TypeOrSetOrTupleTypes = type | TupleTypes | AbstractSetTypes
+'''
+PEP-compliant type hint matching either a type *or* set or tuple of zero or more
+types.
+'''
+
+
+TypeStack = TupleTypes | None
+'''
+PEP-compliant type hint matching a **type stack** (i.e., either tuple of zero or
+more arbitrary types *or* :data:`None`).
+
+Objects matched by this hint are guaranteed to be either:
+
+* If the **beartypeable** (i.e., object currently being decorated by the
+  :func:`beartype.beartype` decorator) is an attribute (e.g., method, nested
+  class) of a class currently being decorated by that decorator, the **type
+  stack** (i.e., tuple of one or more lexically nested classes that are either
+  currently being decorated *or* have already been decorated by this decorator
+  in descending order of top- to bottom-most lexically nested) such that:
+
+  * The first item of this tuple is expected to be the **root decorated class**
+    (i.e., module-scoped class initially decorated by this decorator whose
+    lexical scope encloses this beartypeable).
+  * The last item of this tuple is expected to be the **current decorated
+    class** (i.e., possibly nested class currently being decorated by this
+    decorator).
+
+* Else, this beartypeable was decorated directly by this decorator. In this
+  case, :data:`None`.
+
+Parameters annotated by this hint typically default to :data:`None`.
+
+Note that :func:`beartype.beartype` requires *both* the root and currently
+decorated class to correctly resolve edge cases under :pep:`563`: e.g.,
+
+.. code-block:: python
+
+   from __future__ import annotations
+   from beartype import beartype
+
+   @beartype
+   class Outer(object):
+       class Inner(object):
+           # At this time, the "Outer" class has been fully defined but is *NOT*
+           # yet accessible as a module-scoped attribute. Ergo, the *ONLY* means
+           # of exposing the "Outer" class to the recursive decoration of this
+           # get_outer() method is to explicitly pass the "Outer" class as the
+           # "cls_root" parameter to all decoration calls.
+           def get_outer(self) -> Outer:
+               return Outer()
+
+Note also that nested classes have *no* implicit access to either their parent
+classes *or* to class variables declared by those parent classes. Nested classes
+*only* have explicit access to module-scoped classes -- exactly like any other
+arbitrary objects: e.g.,
+
+.. code-block:: python
+
+   class Outer(object):
+       my_str = str
+
+       class Inner(object):
+           # This induces a fatal compile-time exception resembling:
+           #     NameError: name 'my_str' is not defined
+           def get_str(self) -> my_str:
+               return 'Oh, Gods.'
+
+Ergo, the *only* owning class of interest to :mod:`beartype` is the root owning
+class containing other nested classes; *all* of those other nested classes are
+semantically and syntactically irrelevant. Nonetheless, this tuple intentionally
+preserves *all* of those other nested classes. Why? Because :pep:`563`
+resolution can only find the parent callable lexically containing that nested
+class hierarchy on the current call stack (if any) by leveraging the total
+number of classes lexically nesting the currently decorated class as input
+metadata, as trivially provided by the length of this tuple.
+'''
+
+# ....................{ API ~ importlib                    }....................
+FileFinderPathHook: TypeAlias = Callable
+'''
+:pep:`585`-compliant type hint matching any **file finder path hook** (i.e.,
+closure created and returned by a call to the
+:meth:`importlib.machinery.FileFinder.path_hook` method).
+'''
+
+
+FileFinderPathHookAndIndex = tuple[FileFinderPathHook, int]
+'''
+:pep:`585`-compliant type hint matching any 2-tuple ``(path_hook,
+path_hook_index)`` where:
+
+* ``path_hook`` is a **file finder path hook** (i.e., closure created and
+  returned by a call to the :meth:`importlib.machinery.FileFinder.path_hook`
+  method).
+* ``path_hook_index`` is the 0-based index of either:
+
+  * If the global :obj:`sys.path_hooks` list already contains this hook, the
+    index of this hook in that list.
+  * Else, the index at which the caller should insert this hook into that list.
+'''
+
+
+FileFinderPathHookLoaderDetails = tuple[tuple[type[Loader], list[str]], ...]
+'''
+:pep:`585`-compliant type hint matching **import hook file finder loader
+details** (i.e., tuple-centric data structure associating each Python module
+filetype supported by the current platform with a corresponding import hook file
+loader class whose instances are responsible for loading Python modules of that
+filetype into imported in-memory module objects).
+'''
+
+# ....................{ API ~ pathlib                      }....................
+# Type hints specific to the standard "pathlib" package.
+
+PathnameLike = str | Path
+'''
+PEP-compliant type hint matching a **pathname-like object** (i.e., either a
+low-level string possibly signifying a pathname *or* a high-level :class:`Path`
+instance definitely encapsulating a pathname).
+'''
+
+
+#FIXME: Shift into the "_cavefast" submodule, please. *sigh*
+PathnameLikeTuple = (str, Path)
+'''
+2-tuple of the types of all **pathname-like objects** (i.e., either
+low-level strings possibly signifying pathnames *or* high-level :class:`Path`
+instances definitely encapsulating pathnames).
+'''
+
+# ....................{ PEP ~ 484 : tower                  }....................
+# Note that type unions are intentionally defined to preferably be PEP
+# 604-compliant (e.g., "float | int"). Why? Because obsolete PEP 484-compliant
+# type unions (e.g., "Union[float, int]") fail to support various edge cases,
+# including recursive "beartype.HintOverrides" globally defined by the
+# "beartype._conf._confoverrides" submodule.
+
+Pep484TowerComplex = complex | float | int
+'''
+:pep:`484`-compliant type hint matching the **implicit complex tower** (i.e.,
+complex numbers, floating-point numbers, and integers).
+'''
+
+
+Pep484TowerFloat = float | int
+'''
+:pep:`484`-compliant type hint matching the **implicit floating-point tower**
+(i.e., both floating-point numbers and integers).
+'''
+
+# ....................{ PEP ~ 3119                         }....................
+Pep3119Checkable = type | TupleTypes | HintPep604Type
+'''
+:pep:`604`-compliant type hint matching all :pep:`3119`-compliant **possible
+runtime-checkable objects** (i.e., passable as the second parameter to the
+:func:`isinstance` and :func:`issubclass` builtins, assuming those calls raise
+*no* exceptions from :pep:`3119`-compliant ``__instancecheck__()`` or
+``__subclasscheck__()`` dunder methods defined on relevant metaclasses),
+including:
+
+* A single type.
+* A tuple of zero or more types.
+* A :pep:`604`-compliant **new union** (i.e., two or more types delimited by the
+  ``|`` operator under Python >= 3.10).
+'''
+
+# ....................{ PEP ~ 484 : typevar                }....................
+S = TypeVar('S')
+'''
+**Unbound type variable** (i.e., matching *any* arbitrary type) locally bound to
+different types throughout the :mod:`beartype` codebase.
+'''
+
+
+T = TypeVar('T')
+'''
+**Unbound type variable** (i.e., matching *any* arbitrary type) locally bound to
+different types throughout the :mod:`beartype` codebase.
+'''
+
+
+CallableT = TypeVar('CallableT', bound=Callable)
+'''
+**Callable type variable** (i.e., bound to match *only* callables).
+'''
+
+
+NodeT = TypeVar('NodeT', bound=AST)
+'''
+**Node type variable** (i.e., type variable constrained to match *only* abstract
+syntax tree (AST) nodes).
+'''
+
+# ....................{ PEP ~ 484 : typevar : container    }....................
+SetTypeVars = set[TypeVar]
+'''
+:pep:`585`-compliant type hint matching a mutable set of zero or more
+:pep:`484`-compliant **type variables** (i.e., :class:`.TypeVar` objects).
+'''
+
+
+TupleTypeVars = tuple[TypeVar, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of zero or more
+:pep:`484`-compliant **type variables** (i.e., :class:`.TypeVar` objects).
+'''
+
+# ....................{ PEP ~ (484|612|646)                }....................
+# Type hints required to fully comply with PEPs 484, 612, and 646 -- the
+# standards collectively covering type parameters.
+
+Pep484612646TypeArgPacked = (
+    TypeVar | HintPep612ParamSpecType | HintPep646TypeVarTuplePackedType)
+'''
+PEP-compliant type hint matching a :pep:`484`-, pep:`612`-, or
+:pep:`646`-compliant **packed type parameter** (i.e., :pep:`484`-compliant type
+variable, pep:`612`-compliant parameter specification, or :pep:`646`-compliant
+type variable tuple).
+'''
+
+
+Pep484612646TypeArgUnpacked = TypeVar | HintPep646692UnpackedType
+'''
+:pep:`484`-compliant union matching a :pep:`484`-, pep:`612`-, or
+:pep:`646`-compliant **type parameter** (i.e., :pep:`484`-compliant type
+variable, :pep:`612`-compliant unpacked parameter specification, or
+:pep:`646`-compliant unpacked type variable tuple).
+
+This hint intentionally matches :pep:`646`-compliant unpacked type variable
+tuples (e.g., ``*Ts``) rather than merely :pep:`646`-compliant type variable
+tuples (e.g., ``Ts`` where ``Ts = typing.TypeVarTuple('Ts')``). Since Python
+requires that *all* type variable tuples be unpacked, matching type variable
+tuples in non-unpacked form is (largely) useless.
+
+This hint unintentionally matches :pep:`692`-compliant unpacked typed
+dictionaries (e.g., ``typing.Unpack[TypedDict[{}]]``) as well. Although this
+hint invites ambiguous false negatives and should thus be used with caution,
+this hint is still preferable to even more ambiguous alternatives like
+:obj:`typing.Any` or :class:`object`.
+'''
+
+
+TuplePep484612646TypeArgsPacked = tuple[Pep484612646TypeArgPacked, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of zero or more **packed type
+parameters** (i.e., :pep:`484`-compliant type variables, pep:`612`-compliant
+parameter specifications, or :pep:`646`-compliant type variable tuples).
+'''
+
+
+TuplePep484612646TypeArgsUnpacked = tuple[Pep484612646TypeArgUnpacked, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of zero or more :pep:`484`-,
+pep:`612`-, or :pep:`646`-compliant **unpacked type parameters** (i.e.,
+:pep:`484`-compliant type variables, :pep:`612`-compliant unpacked parameter
+specification, or :pep:`646`-compliant unpacked type variable tuples).
+'''
+
+# ....................{ PEP ~ (484|749)                    }....................
+# Type hints required to fully comply with PEPs 484 and 749 -- the standards
+# collectively covering forward references.
+
+HintPep484749Ref = str | HintPep484749RefObjectType
+'''
+Union of all :pep:`484`- and :pep:`749`-compliant **forward reference types**
+(i.e., classes of all forward reference objects).
+
+See Also
+--------
+:data:`beartype._cave._cavefast.HintPep484749RefTypes`
+    Further details.
+'''
+
+# ....................{ PEP ~ (649|749)                    }....................
+# Objects defining PEP 649- and 749-compliant __annotate__() dunder methods are
+# either...
+Pep649749Hintable = type | Callable | ModuleType
+'''
+:pep:`649`- and :pep:`749`-compliant type hint matching any **hintable** (i.e.,
+ideally pure-Python object defining the ``__annotations__`` dunder attribute as
+well as the :pep:`649`-compliant ``__annotate__`` dunder method if the active
+Python interpreter targets Python >= 3.14).
+'''
+
+
+Pep649749HintableAnnotations = DictStrToAny
+'''
+:pep:`649`- and :pep:`749`-compliant type hint matching any **hintable
+annotations** (i.e., dictionary mapping from the name of each annotated
+parameter or return of a callable *or* annotated variable of a class or module
+to the type hint annotating that parameter, return, or variable).
+'''
+
+# ....................{ PEP ~ 695                          }....................
+#FIXME: Uncomment the "| typing.TypeAliasType" branch *AFTER* dropping support
+#for Python 3.12. *sigh*
+Pep695Parameterizable = type | FunctionType  # | typing.TypeAliasType
+'''
+:pep:`695`-compliant type hint matching *any* :pep:`695` **parameterizable**
+(i.e., object that may be parametrized by a :pep:`695`-compliant list of one or
+more implicitly instantiated :pep:`484`-compliant type variables,
+pep:`612`-compliant parameter specifications, or :pep:`646`-compliant type
+variable tuples).
+
+Specifically, this hint matches:
+
+* *Any* pure-Python class.
+* *Any* pure-Python function.
+* *Any* :pep:`695`-compliant type alias.
+'''
+
+# ....................{ TYPE                               }....................
+TypeException = type[Exception]
+'''
+:pep:`585`-compliant type hint matching *any* exception class.
+'''
+
+
+TypeWarning = type[Warning]
+'''
+:pep:`585`-compliant type hint matching *any* warning category.
+'''

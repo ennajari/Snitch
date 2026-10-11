@@ -1,0 +1,601 @@
+#!/usr/bin/env python3
+# --------------------( LICENSE                            )--------------------
+# Copyright (c) 2014-2026 Beartype authors.
+# See "LICENSE" for further details.
+
+'''
+Beartype **forward scope type factories** (i.e., low-level callables creating
+and returning dictionary subclasses deferring the resolutions of local and
+global scopes of types and callables decorated by the :func:`beartype.beartype`
+decorator when dynamically evaluating :pep:`484`-compliant forward references
+for those types and callables).
+
+This private submodule is *not* intended for importation by downstream callers.
+'''
+
+# ....................{ IMPORTS                            }....................
+from beartype.roar import BeartypeDecorHintForwardRefException
+from beartype.roar._roarexc import _BeartypeUtilCallableScopeNotFoundException
+from beartype._cave._cavefast import (
+    CallableFrameType,
+    WeakrefCallableType,
+)
+from beartype._check.cls.call.calldatadecorabc import (
+    BeartypeCallDecorDataABC)
+from beartype._check.cls.call.calldatadecorfuncmin import (
+    BeartypeCallDecorFuncMinimalData)
+from beartype._check.forward.scope.fwdscopecls import BeartypeForwardScope
+from beartype._data.kind.datakindmap import FROZENDICT_EMPTY
+from beartype._data.typing.datatyping import (
+    LexicalScope,
+    TypeException,
+)
+from beartype._util.cls.utilclsget import get_type_locals
+from beartype._util.func.utilfunccodeobj import get_func_codeobject
+from beartype._util.func.utilfuncframe import (
+    GET_FRAME_CALLER_PARENT,
+    find_frame_caller_external,
+    get_frame_globals,
+    get_frame_locals,
+    get_frame_module_name_or_none,
+    get_frame_parent_object_or_none,
+)
+from beartype._util.func.utilfuncscope import (
+    get_func_globals,
+    find_func_locals_frame,
+)
+from beartype._util.hint.pep.proposal.pep695 import (
+    add_func_scope_hint_pep695_parameterizable_typeparams,
+    is_object_pep695_parameterizable,
+    resolve_func_scope_pep695,
+)
+from beartype._util.module.utilmodget import get_object_module_name_or_none
+from collections.abc import Callable
+
+# ....................{ FACTORIES ~ caller                 }....................
+#FIXME: Unit test us up, please.
+def make_scope_forward_caller_external(
+    # Optional parameters.
+    exception_cls: TypeException = BeartypeDecorHintForwardRefException,
+    exception_prefix: str = '',
+) -> BeartypeForwardScope:
+    '''
+    Create and return a new **forward scope** (i.e., dictionary mapping from the
+    name to value of each locally and globally accessible attribute in the local
+    and global scope of the currently decorated callable as well as deferring
+    the resolution of each currently undeclared attribute in that scope by
+    replacing that attribute with a forward reference proxy resolved only when
+    that attribute is passed as the second parameter to an :func:`isinstance`-
+    or :func:`issubclass`-based runtime type-check) relative to the first
+    **external lexical scope** on the call stack (i.e., originating from any
+    module or package *except* those residing in the :mod:`beartype` package).
+
+    This factory is internally memoized into the
+    :attr:`decor_currfunc_wrappee_wrappee_scope_forward` instance variable of the
+    passed metadata.
+
+    Parameters
+    ----------
+    exception_cls : Type[Exception], default: BeartypeDecorHintForwardRefException
+        Type of exception to be raised in the event of a fatal error. Defaults
+        to :exc:`.BeartypeDecorHintForwardRefException`.
+    exception_prefix : str, default: ''
+        Human-readable substring prefixing raised exception messages. Defaults
+        to the empty string.
+
+    Returns
+    -------
+    BeartypeForwardScope
+        Forward scope relative to the currently decorated callable.
+    '''
+
+    # ....................{ CALLER                         }....................
+    # Stack frame encapsulating the external caller.
+    caller_frame = find_frame_caller_external(
+        # Additionally ignore the current frame on the call stack encapsulating
+        # the current call to this factory function.
+        ignore_frames=GET_FRAME_CALLER_PARENT,
+        exception_cls=exception_cls,
+        exception_prefix=exception_prefix,
+    )
+
+    # Global and local scopes directly accessible to this external caller.
+    caller_globals = get_frame_globals(caller_frame)
+    caller_locals = get_frame_locals(caller_frame)
+
+    # Fully-qualified name of the module declaring this external caller if that
+    # caller defines the "__module__" dunder attribute *OR* "None" otherwise
+    # (i.e., if that caller fails to define that attribute).
+    caller_module_name = get_frame_module_name_or_none(caller_frame)
+    # print(f'Resolved external caller frame {caller_frame} in module "{caller_module_name}"!')
+    # print(f'Local scope:\n\t{caller_locals}')
+    # print(f'Global scope:\n\t{caller_globals}')
+
+    # ....................{ SCOPE                          }....................
+    # Forward scope compositing this global and local scope of the external
+    # caller as well as dynamically replacing each unresolved attribute of each
+    # stringified type hint with a forward reference proxy resolving that
+    # attribute on the first attempt to pass that attribute as the second
+    # parameter to an isinstance()- or issubclass()based runtime type-check.
+    caller_scope = BeartypeForwardScope(
+        scope_name=caller_module_name,
+        exception_prefix=exception_prefix,
+    )
+
+    # Composite this global and local scope into this forward scope (in that
+    # order), implicitly overwriting first each builtin attribute and then each
+    # global attribute previously copied into this forward scope with each
+    # global and then local attribute of the same name. Since locals *ALWAYS*
+    # assume precedence over globals *ALWAYS* assume precedence over builtins,
+    # order of operation is *EXTREMELY* significant here.
+    caller_scope.update(caller_globals)
+    caller_scope.update(caller_locals)
+    # print(f'Forward scope: {decor_currfunc_wrappee_wrappee_scope_forward}')
+
+    # ....................{ RETURN                         }....................
+    # Return this forward scope.
+    return caller_scope
+
+# ....................{ FACTORIES ~ decorated              }....................
+#FIXME: Unit test us up, please.
+def make_scope_forward_decor_curr(
+    # Mandatory parameters.
+    decor_curr: BeartypeCallDecorDataABC,
+    hint: str,
+    func_is_nested: bool,
+
+    # Optional parameters.
+    exception_cls: TypeException = BeartypeDecorHintForwardRefException,
+    exception_prefix: str = '',
+) -> LexicalScope:
+    '''
+    Create and return a new **forward scope** (i.e., dictionary mapping from the
+    name to value of each locally and globally accessible attribute in the local
+    and global scope of the currently decorated callable as well as deferring
+    the resolution of each currently undeclared attribute in that scope by
+    replacing that attribute with a forward reference proxy resolved only when
+    that attribute is passed as the second parameter to an :func:`isinstance`-
+    or :func:`issubclass`-based runtime type-check) relative to the currently
+    decorated callable described by the passed metadata.
+
+    This factory is internally memoized into the
+    :attr:`decor_curr.func_wrappee_wrappee_scope_forward` instance variable of
+    the passed metadata.
+
+    Parameters
+    ----------
+    decor_curr : BeartypeCallDecorDataABC
+        **Beartype decorator call minimal metadata** (i.e., dataclass
+        encapsulating the minimal metadata required to type-check the currently
+        decorated callable at the time that callable is subsequently called).
+    hint : str
+        Stringified forward reference type hint to be resolved.
+    func_is_nested : bool
+         Either:
+
+         * If the currently decorated callable is **nested** (i.e., declared in
+           the body of another pure-Python callable or class), :data:`True`.
+         * If the currently decorated callable is **global** (i.e., declared at
+           module scope in its submodule), :data:`False`.
+    exception_cls : type[Exception], default: BeartypeDecorHintForwardRefException
+        Type of exception to be raised in the event of a fatal error. Defaults
+        to :exc:`.BeartypeDecorHintForwardRefException`.
+    exception_prefix : str, default: ''
+        Human-readable substring prefixing raised exception messages. Defaults
+        to the empty string.
+
+    Returns
+    -------
+    LexicalScope
+        Forward scope relative to the currently decorated callable.
+    '''
+    assert isinstance(decor_curr, BeartypeCallDecorDataABC), (
+        f'{repr(decor_curr)} not beartype decorator call metadata.')
+    assert isinstance(func_is_nested, bool), (
+        f'{repr(func_is_nested)} not boolean.')
+    # print(f'Making forward scope for {repr(decor_curr.decoratee)}...')
+
+    # ....................{ LOCALS ~ init                  }....................
+    # Decoratee (i.e., currently decorated callable or type) and metadata
+    # associated with that decoratee, localized to improve both readability and
+    # negligible efficiency when accessed below.
+    decoratee = decor_curr.decoratee
+    cls_stack = decor_curr.cls_stack
+
+    # ....................{ PREAMBLE                       }....................
+    # If the forward scope of the decorated callable has already been decided,
+    # immediately return this scope as is.
+    if decor_curr.decoratee_scope_forward is not None:
+        return decor_curr.decoratee_scope_forward
+    # Else, this forward scope has yet to be decided.
+    #
+    # If this decorator call metadata is minimal (i.e.,
+    # "BeartypeCallDecorFuncMinimalData" object) rather maximal (i.e.,
+    # "BeartypeCallDecorFuncData" object), this forward scope should have
+    # already been decided by (in order):
+    # * Repeated calls to the
+    #   BeartypeCallDecorFuncData.resolve_hint_pep484_ref_str() method of the
+    #   original maximal metadata.
+    # * A call to the BeartypeCallDecorFuncData.minify() method, propagating the
+    #   forward scope from that maximal to this minimal metadata.
+    #
+    # But this forward scope is still undecided! Ergo, beartype failed to follow
+    # the above workflow. To compound matters, it is infeasible to reconstruct
+    # the forward scope associated with the original maximal metadata here. Why?
+    # Doing so requires the global scope (which is still trivially accessible as
+    # "func.__globals__") *AND* local scope (which was only previously
+    # accessible as "func_frame.f_locals" after iteratively searching the call
+    # stack for the stack frame encapsulating the decoration) of the previously
+    # decorated callable. Since that callable has already been decorated, that
+    # stack frame no longer exists. Ergo, that local scope is now inaccessible.
+    # Ergo, this forward scope *CANNOT* be reconstructed.
+    #
+    # Note that this should *NEVER* occur. Naturally, this just occurred.
+    elif decor_curr.__class__ is BeartypeCallDecorFuncMinimalData:  # pragma: no cover
+        # Raise this exception.
+        raise exception_cls(
+            f'{exception_prefix}'
+            f'PEP 484 forward reference type hint "{hint}" unresolvable, as '
+            f'callable {repr(decor_curr.decoratee)} forward reference scope not '
+            f'propagated onto wrapper function at decoration time. '
+            f'Beartype has failed us all... but kinda mostly just you.'
+        )
+    # Else, this decorator call metadata is maximal (i.e.,
+    # "BeartypeCallDecorFuncData" object) rather than minimal (i.e.,
+    # "BeartypeCallDecorFuncMinimalData" object). In this case, this forward
+    # scope is decidable as documented above. We do so now.
+
+    #FIXME: *HORRIBLE*. This is an extremely crude hack that trivially (albeit
+    #incorrectly) generalizes this factory function to cover types. Why is this
+    #incorrect? Because this fails to handle decoration chains in which the
+    #@beartype decorator is chained *UNDER* another third-party decorator: e.g.,
+    #    @some_third_party_decorator
+    #    @beartype(conf=BeartypeConf(is_pep557_fields=True))
+    #    @dataclass
+    #    class MuhDataclass(object):
+    #        muh_field: 'MuhUndefinedType'
+    #
+    #    class MuhUndefinedType(object): ...
+    #
+    #In the above case, the PEP 484-compliant relative stringified forward
+    #reference 'MuhUndefinedType' will be incorrectly proxied relative to the
+    #global and local scopes of the @some_third_party_decorator decorator rather
+    #than those of the "MuhDataclass" class, resulting in false positives during
+    #subsequent type-checking of the "muh_field" field. So awful!
+    #
+    #That said, generalizing the currently function-specific code below to
+    #additionally cover types will prove *EXTREMELY* non-trivial. Since this
+    #crude hack kinda suffices for the average case, this is what we're rolling
+    #with for the moment as a temporary expedient. So much awfulness! Ohnoes...
+    elif isinstance(decoratee, type):
+        # print(f'Detected class decoratee {repr(decoratee)}!')
+        return make_scope_forward_caller_external(
+            exception_cls=exception_cls,
+            exception_prefix=exception_prefix,
+        )
+
+    # ....................{ LOCALS ~ moar                  }....................
+    # Stack frame on the current call stack embodying the parent callable or
+    # type locally declaring the decorated callable if any *OR* "None",
+    # defaulting to "None".
+    func_locals_frame: CallableFrameType | None = None
+
+    # Local scope of that call, defaulting to the empty dictionary.
+    func_locals: LexicalScope = FROZENDICT_EMPTY
+
+    # Global scope of the decorated callable.
+    func_globals = get_func_globals(func=decoratee, exception_cls=exception_cls)
+
+    # Fully-qualified name of the module declaring the decorated callable if
+    # that callable defines the "__module__" dunder attribute *OR* "None"
+    # otherwise (i.e., if that callable fails to define that attribute).
+    func_module_name = get_object_module_name_or_none(decoratee)
+
+    # Weak reference to the code object of the parent callable or type
+    # locally declaring the decorated callable if any *OR* "None", initialized
+    # to the latter.
+    func_local_parent_codeobj_weakref: WeakrefCallableType | None = None
+
+    # Parent callable if the decorated callable is locally declared inside a
+    # parent callable and is thus either a closure or non-closure nested
+    # function *OR* "None".
+    parent_func: Callable | None = None
+
+    # ..................{ SCOPE ~ locals                     }..................
+    #FIXME: Shift this entire "if: ... else: ..." construct into a new private
+    #_get_decor_curr_scope_forward_locals() getter for maintainability, please.
+    # If the decorated callable is nested (rather than global) and thus *MAY*
+    # have a non-empty local nested scope...
+    if func_is_nested:
+        # Attempt to...
+        try:
+            # Local scope and associated stack frame of the decorated callable.
+            func_locals, func_locals_frame = find_func_locals_frame(
+                func=decoratee,
+
+                # Ignore all lexical scopes in the fully-qualified name of the
+                # decorated callable corresponding to parent classes lexically
+                # nesting the current decorated class containing that callable
+                # (including that class). Why? Because these classes are *ALL*
+                # currently being decorated and thus have yet to be encapsulated
+                # by new stack frames on the call stack. If these lexical scopes
+                # are *NOT* ignored, this call to find_func_locals_frame() will
+                # fail to find the parent lexical scope of the decorated
+                # callable and then raise an unexpected exception.
+                #
+                # Consider, for example, this nested class decoration of a
+                # fully-qualified "muh_package.Outer" class:
+                #     @beartype
+                #     class Outer(object):
+                #         class Middle(object):
+                #             class Inner(object):
+                #                 def muh_method(self) -> str:
+                #                     return 'Painful API is painful.'
+                #
+                # When @beartype finally recurses into decorating the nested
+                # muh_package.Outer.Middle.Inner.muh_method() method, this call
+                # to find_func_locals_frame() if *NOT* passed this parameter would
+                # naively assume that the parent lexical scope of the current
+                # muh_method() method on the call stack is named "Inner".
+                # Instead, the parent lexical scope of that method on the call
+                # stack is named "muh_package" -- the first lexical scope
+                # enclosing that method that exists on the call stack. The
+                # non-existent "Outer", "Middle", and "Inner" lexical scopes
+                # must *ALL* be silently ignored.
+                ignore_func_scope_names=(
+                    0 if cls_stack is None else len(cls_stack)),
+
+                #FIXME: Consider dynamically calculating exactly how many
+                #additional @beartype-specific frames are ignorable on the first
+                #call to this function, caching that number, and then reusing
+                #that cached number on all subsequent calls to this function.
+                #The current approach employed below of naively hard-coding a
+                #number of frames to ignore was incredibly fragile and had to be
+                #effectively disabled, which hampers runtime efficiency.
+
+                # Additionally ignore the current frame on the call stack
+                # encapsulating the current call to this factory function.
+                #
+                # Note that, for safety, we currently avoid ignoring additional
+                # frames that we could technically ignore. These include:
+                # * The call to the parent
+                #   beartype._check.cls.call.calldatadecorfunc.BeartypeCallDecorFuncData.reinit()
+                #   method.
+                # * The call to the parent @beartype.beartype() decorator.
+                #
+                # Why? Because the @beartype codebase has been sufficiently
+                # refactored so as to render any such attempts non-trivial,
+                # fragile, and frankly dangerous.
+                ignore_frames=GET_FRAME_CALLER_PARENT,
+                exception_cls=exception_cls,
+            )
+        # If this local scope cannot be found (i.e., if this getter found the
+        # lexical scope of the module declaring the decorated callable *BEFORE*
+        # that of the parent callable or class declaring that callable), then
+        # this factory function was called *AFTER* rather than *DURING* the
+        # declaration of the decorated callable. This implies that that callable
+        # is not, in fact, currently being decorated. Instead, that callable was
+        # *NEVER* decorated by @beartype but has instead subsequently been
+        # passed to this function after its initial declaration -- typically due
+        # to an external caller passing that callable to our public
+        # beartype.peps.resolve_pep563() function.
+        #
+        # In this case, the call stack frame providing this local scope has
+        # (almost certainly) already been deleted and is no longer accessible.
+        # We have no recourse but to default to the empty frozen dictionary.
+        except _BeartypeUtilCallableScopeNotFoundException:
+            pass
+
+        # If the decorated callable is a method transitively defined by a root
+        # decorated class, add a pair of local attributes exposing:
+        # * The unqualified basename of the root decorated class. Why? Because
+        #   this class may be recursively referenced in postponed type hints and
+        #   *MUST* thus be exposed to *ALL* postponed type hints. However, this
+        #   class is currently being decorated and thus has yet to be defined in
+        #   either:
+        #   * If this class is module-scoped, the global attribute dictionary of
+        #     that module and thus the "func_globals" dictionary.
+        #   * If this class is closure-scoped, the local attribute dictionary of
+        #     that closure and thus the "func_locals" dictionary.
+        # * The unqualified basename of the current decorated class. Why? For
+        #   similar reasons. Since the current decorated class may be lexically
+        #   nested in the root decorated class, the current decorated class is
+        #   *NOT* already accessible as either a global or local. Exposing the
+        #   current decorated class to a stringified
+        #   type hint referencing that class thus requires adding a local
+        #   attribute exposing that class.
+        #
+        # Note that:
+        # * *ALL* intermediary classes (i.e., excluding the root decorated
+        #   class) lexically nesting the current decorated class are irrelevant.
+        #   Intermediary classes are neither module-scoped nor closure-scoped
+        #   and thus inaccessible as either globals or locals in the nested
+        #   lexical scope of the current decorated class: e.g.,
+        #     # This raises a parser error and is thus *NOT* fine:
+        #     #     NameError: name 'muh_type' is not defined
+        #     class Outer(object):
+        #         class Middle(object):
+        #             muh_type = str
+        #
+        #             class Inner(object):
+        #                 def muh_method(self) -> muh_type:
+        #                     return 'Dumpster fires are all I see.'
+        # * This implicitly overrides any previously declared locals of the same
+        #   name. Although non-ideal, this constitutes syntactically valid
+        #   Python and is thus *NOT* worth emitting even a non-fatal warning
+        #   over: e.g.,
+        #     # This is fine... technically.
+        #     from beartype import beartype
+        #     def muh_closure() -> None:
+        #         MuhClass = 'This is horrible, yet fine.'
+        #
+        #         @beartype
+        #         class MuhClass(object):
+        #             def muh_method(self) -> str:
+        #                 return 'Look away and cringe, everyone!'
+        if cls_stack:
+            # Root and current decorated types.
+            cls_root = cls_stack[0]
+            cls_curr = cls_stack[-1]
+
+            # If this local scope is the empty frozen dictionary, mutate this
+            # local scope into a new mutable dictionary to enable new locals to
+            # be added to this scope below.
+            if func_locals is FROZENDICT_EMPTY:
+                func_locals = {}
+            # Else, this local scope is *NOT* the empty frozen dictionary.
+            # Presumably, this implies this scope to be a mutable dictionary.
+
+            # Add new locals exposing these types to type hints, overwriting any
+            # locals of the same names in the higher-level local scope for any
+            # closure declaring this type if any. These types are currently
+            # being decorated and thus guaranteed to be the most recent
+            # declarations of these attributes.
+            #
+            # Note that the current type assumes lexical precedence over the
+            # root type and is thus intentionally added *AFTER* the latter.
+            func_locals[cls_root.__name__] = cls_root
+            func_locals[cls_curr.__name__] = cls_curr
+
+            # Type scope (i.e., lexical scope for the type directly defining
+            # this method, providing all class variables directly defined in the
+            # body of this type).
+            #
+            # Note that callables *ONLY* have direct access to attributes
+            # declared by the types directly defining those callables. Ergo, the
+            # lexical scopes for parent types of this type (including the root
+            # decorated type) are *ALL* irrelevant.
+            type_locals = get_type_locals(cls_curr)
+            # print(f'Nested type {cls_curr} locals: {type_locals}')
+
+            # Forcefully merge this type scope into the current local scope,
+            # implicitly overwriting any locals of the same name. Class
+            # variables necessarily assume lexical precedence over:
+            # * These types themselves.
+            # * Class variables defined by higher-level parent types.
+            # * Local variables defined by higher-level parent closures defining
+            #   these types.
+            func_locals.update(type_locals)
+        # Else, the decorated callable is *NOT* a method transitively declared
+        # by a root decorated type.
+    # Else, the decorated callable is global and thus guaranteed to have an
+    # empty local scope. In this case, default to the empty frozen dictionary.
+    else:
+        func_locals = FROZENDICT_EMPTY
+
+    # ..................{ SCOPE ~ parent                     }..................
+    # If the decorated callable is locally declared by some parent callable
+    # (e.g., is a closure) or type (e.g., is a method)...
+    if func_locals_frame is not None:
+        # Weak reference to the code object of that parent callable or type.
+        func_local_parent_codeobj_weakref = WeakrefCallableType(
+            get_func_codeobject(func_locals_frame))
+
+        # Either:
+        # * If the decorated callable is locally declared by a parent callable
+        #   and is thus either a closure or non-closure nested function, that
+        #   parent callable.
+        # * If the decorated callable is a method of a parent type, "None".
+        # * If the decorated callable is a global function, this "if"
+        #   conditional would have never been entered... but this "if"
+        #   conditional was clearly entered. Ergo, the decorated callable is
+        #   *NOT* a global function.
+        parent_func = get_frame_parent_object_or_none(func_locals_frame)  # type: ignore[assignment]
+    # Else, the decorated callable is a global function.
+
+    # ..................{ SCOPE ~ forward                    }..................
+    # Forward scope compositing this global and local scope of the decorated
+    # callable as well as dynamically replacing each unresolved attribute of
+    # each stringified type hint with a forward reference proxy resolving that
+    # attribute on the first attempt to pass that attribute as the second
+    # parameter to an isinstance()- or issubclass()based runtime type-check:
+    #     from beartype import beartype
+    #     from beartype.typing import Dict, Generic, TypeVar
+    #
+    #     T = TypeVar('T')
+    #
+    #     # @beartype resolves this stringified type hint as follows:
+    #     # * The "Dict", "str", and "int" attributes are globals and thus
+    #     #   trivially resolved to those objects via the "func_globals"
+    #     #   scope decided above.
+    #     # * The "MuhGeneric" attribute is neither a global nor local and
+    #     #   thus remains unresolved. This forward scope replaces this
+    #     #   unresolved attribute with a forward reference proxy.
+    #     @beartype
+    #     def muh_func(muh_arg: 'Dict[str, MuhGeneric[int]]') -> None: ...
+    #
+    #     class MuhGeneric(Generic[T]): ...
+    func_scope = decor_curr.decoratee_scope_forward = BeartypeForwardScope(
+        scope_name=func_module_name,
+        func_local_parent_codeobj_weakref=func_local_parent_codeobj_weakref,
+        exception_prefix=exception_prefix,
+    )
+
+    # ..................{ SCOPES ~ composite                 }..................
+    # Composite the scopes introspected above into this forward scope in the
+    # correct order. Order of operation is *EXTREMELY* significant here.
+
+    # Composite this global scope into this forward scope first, implicitly
+    # overwriting each builtin attribute previously copied into this forward
+    # scope with each global attribute of the same name. Globals *ALWAYS* assume
+    # precedence over builtins.
+    func_scope.update(func_globals)
+    # print(f'func: {func}; parent_func: {parent_func}')
+
+    # If...
+    if (
+        # The decorated callable is locally declared by some parent callable and
+        # is thus nested in that callable (i.e., as either a closure or
+        # non-closure nested function) *AND*...
+        parent_func is not None and
+        # The active Python interpreter targets Python >= 3.12 and thus supports
+        # PEP 695...
+        is_object_pep695_parameterizable(parent_func)
+    ):
+        # Then this parent callable may define a PEP 695-compliant type
+        # parameter scope (e.g., "[T]" in "def parent_callable[T](...) -> T:").
+        # If this is the case, composite this scope into this forward scope
+        # *AFTER* compositing all global attributes into this scope above but
+        # *BEFORE* compositing all local attributes into this scope below. Why?
+        # Because, with respect to the decorated callable, the type parameters
+        # implicitly defined by the type parameter scope of the parent callable
+        # are effectively local variables declared *BEFORE* any actual local
+        # variables are defined in the body of the parent callable. This
+        # intentional ordering enables:
+        # * Parent type parameters to correctly shadow globals.
+        # * Locals to correctly shadow parent type parameters.
+        add_func_scope_hint_pep695_parameterizable_typeparams(
+            func_scope=func_scope,
+            parameterizable=parent_func,
+            exception_cls=exception_cls,
+            exception_prefix=exception_prefix,
+        )
+        # print(f'Forward scope for {func} after parent PEP 695: {func_scope}\n\n')
+    # Else, either the decorated callable is not locally declared by a parent
+    # callable *OR* the active Python interpreter targets Python <= 3.11. In
+    # either case, *NO* parent callable defining a PEP 695-compliant type
+    # parameter scope exists.
+
+    # Composite this local scope into this forward scope next, implicitly
+    # overwriting first each global attribute previously copied into this
+    # forward scope with each local attribute of the same name. Locals *ALWAYS*
+    # assume precedence over globals.
+    func_scope.update(func_locals)
+    # print(f'Forward scope: {decor_currfunc_wrappee_wrappee_scope_forward}')
+
+    # If the decorated callable resides in one or more PEP 695-compliant type
+    # parameter scopes, composite these scopes into this forward scope *AFTER*
+    # compositing all local and global attributes into this scope above. Doing
+    # so properly overrides these attributes with type parameters of the same
+    # name, vaguely replicating the scoping rules established by PEP 695:
+    #     https://peps.python.org/pep-0695/#type-parameter-scopes
+    resolve_func_scope_pep695(
+        func_scope=func_scope,
+        func=decoratee,
+        cls_stack=cls_stack,
+        exception_prefix=exception_prefix,
+    )
+
+    # ....................{ RETURN                         }....................
+    # Return this forward scope.
+    return func_scope

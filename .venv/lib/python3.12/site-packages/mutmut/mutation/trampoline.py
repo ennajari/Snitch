@@ -1,0 +1,176 @@
+import inspect
+import os
+from collections.abc import Callable
+from functools import wraps
+from typing import Annotated
+from typing import Any
+from typing import ParamSpec
+from typing import TypeVar
+
+from mutmut.core import MutmutCallStack
+from mutmut.core import MutmutProgrammaticFailException
+from mutmut.stats import record_trampoline_hit
+from mutmut.utils.format_utils import mangled_name_from_mutant_name
+
+TReturn = TypeVar("TReturn")
+MutantDict = Annotated[dict[str, Callable[..., TReturn]], "Mutant"]
+
+# mypy: disable-error-code="no-any-return, unused-ignore"
+
+
+# properly typed decorator
+P = ParamSpec("P")
+R = TypeVar("R")
+
+# mutant dict only contains some callable. maybe could be typed better, but likely not necessary.
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+# Process-local copy of the active mutant. Tests that scrub os.environ
+# (``patch.dict(..., clear=True)``) must not be able to disable it. See #511.
+_mutant_under_test: str | None = None
+
+
+def set_mutant_under_test(name: str | None) -> None:
+    """Record the active mutant in process-local state.
+
+    ``None`` clears the override so the trampoline falls back to ``os.environ``.
+    A string value is also mirrored into ``MUTANT_UNDER_TEST`` for compatibility.
+    """
+    global _mutant_under_test
+    _mutant_under_test = name
+    if name is not None:
+        os.environ["MUTANT_UNDER_TEST"] = name
+
+
+def get_mutant_under_test() -> str:
+    """Return the active mutant name.
+
+    If ``MUTANT_UNDER_TEST`` is in the environment, that value wins so
+    existing tests and callers that only set the env var keep working.
+    If the key is missing (for example after ``patch.dict(..., clear=True)``),
+    fall back to the process-local copy set by ``set_mutant_under_test``.
+    """
+    if "MUTANT_UNDER_TEST" in os.environ:
+        return os.environ["MUTANT_UNDER_TEST"]
+    if _mutant_under_test is not None:
+        return _mutant_under_test
+    return ""
+
+
+def wrap_in_trampoline(
+    mutants_dict: dict[str, F], is_classmethod: bool = False
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    def mutmut_mutated(decorated_func: Callable[P, R]) -> Callable[P, R]:
+        """Wrap the ``decorated_func`` in a trampoline.
+        The trampoline forwards calls based on the active mutant
+        (see ``get_mutant_under_test``), either to a copy of the original method,
+        or to the currently active mutated method.
+        """
+
+        def trampoline(*args: P.args, **kwargs: P.kwargs) -> R:
+            # orig_func is the non-mutated implementation.
+            # we do not use `decorated_func` directly,
+            # because using the func via SomeClass.foo makes it easier for classmethod wrapping
+            orig_func = mutants_dict["_mutmut_orig"]
+            call_args: list[Any] = list(args)
+
+            if is_classmethod:
+                # for @classmethod, the first arg is cls
+                # with getattr(cls, 'some_method'), we get cls.some_method
+                # which is necessary to get the method bound to the subclass, even if it's declared on the parent class
+                call_args = list(args[1:])
+                orig_func = getattr(args[0], orig_func.__name__)
+
+            mutant_under_test = get_mutant_under_test()
+
+            if mutant_under_test == "fail":
+                raise MutmutProgrammaticFailException(
+                    "Verifying setup. At least one test should fail if mutations cause errors."
+                )
+
+            if mutant_under_test == "stats":
+                orig_qual_name = f"{orig_func.__module__}.{mangled_name_from_mutant_name(orig_func.__name__)}"
+                caller_name, depth = MutmutCallStack.get()
+                max_depth = int(os.environ.get("MUTMUT_DEPENDENCY_DEPTH", "-1"))
+                if max_depth == -1 or depth < max_depth:
+                    record_trampoline_hit(orig_qual_name, caller=caller_name)
+                    token = MutmutCallStack.set((orig_qual_name, depth + 1))
+                    try:
+                        return orig_func(*call_args, **kwargs)
+                    finally:
+                        MutmutCallStack.reset(token)
+                else:
+                    return orig_func(*call_args, **kwargs)
+
+            # mutant under test is {module}.{mutant_name}
+            module, _, mutant_name = mutant_under_test.rpartition(".")
+
+            if module != decorated_func.__module__:
+                # mutant of another module is active -> call original function
+                return orig_func(*call_args, **kwargs)
+
+            mutated_func = mutants_dict.get(mutant_name)
+            if mutated_func is None:
+                # No mutant being tested -> call original function
+                return orig_func(*call_args, **kwargs)
+
+            if is_classmethod:
+                mutated_func = getattr(args[0], mutated_func.__name__)
+            return mutated_func(*call_args, **kwargs)
+
+        # ensure that inspect calls still produce the same result for the trampoline
+        # @wraps sadly does not preserve this, so we do all cases manually here
+        if inspect.isgeneratorfunction(decorated_func):
+
+            @wraps(decorated_func)
+            def _trampoline_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:  # type: ignore
+                # ``return`` the delegation result so a generator's StopIteration value
+                # (``return`` inside the generator) is forwarded to the caller's
+                # ``yield from``, matching the PEP 380 expansion.
+                return (yield from trampoline(*args, **kwargs))  # type: ignore
+        elif inspect.iscoroutinefunction(decorated_func):
+
+            @wraps(decorated_func)
+            async def _trampoline_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:  # type: ignore
+                return await trampoline(*args, **kwargs)  # type: ignore
+        elif inspect.isasyncgenfunction(decorated_func):
+
+            @wraps(decorated_func)
+            async def _trampoline_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:  # type: ignore
+                # Forward the full async-generator protocol (asend/athrow/aclose) to the inner
+                # generator. A bare ``async for`` only forwards iteration, so aclose()/athrow()
+                # would hit this wrapper instead of the wrapped generator -- breaking deterministic
+                # cleanup (``finally:`` / ``except GeneratorExit:`` running synchronously on close)
+                # and exception injection. This mirrors the PEP 380 ``yield from`` expansion,
+                # adapted for the async-generator protocol. See
+                # https://github.com/boxed/mutmut/issues/525.
+                gen = trampoline(*args, **kwargs)  # type: ignore
+                try:
+                    yielded = await gen.asend(None)  # type: ignore
+                    while True:
+                        try:
+                            sent = yield yielded
+                        except GeneratorExit:
+                            # caller closed us -> close the inner generator and propagate
+                            await gen.aclose()  # type: ignore
+                            raise
+                        except BaseException as exc:
+                            # caller threw into us -> forward the exception into the inner generator
+                            yielded = await gen.athrow(exc)  # type: ignore
+                        else:
+                            # normal resume (__anext__ / asend) -> forward the sent value
+                            yielded = await gen.asend(sent)  # type: ignore
+                except StopAsyncIteration:
+                    return
+                finally:
+                    await gen.aclose()  # type: ignore
+        else:
+
+            @wraps(decorated_func)
+            def _trampoline_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+                return trampoline(*args, **kwargs)
+
+        return _trampoline_wrapper  # type: ignore
+
+    return mutmut_mutated

@@ -1,0 +1,364 @@
+import inspect
+import sys
+import typing
+from collections.abc import (
+    Callable,
+    Collection,
+    Iterable,
+    MutableSequence,
+    MutableSet,
+    Reversible,
+    Sequence,
+    Set,
+)
+from enum import Enum, Flag
+from functools import partial
+from types import UnionType
+from typing import Annotated, Any, Literal, NotRequired, Required, Union, Unpack, get_args, get_origin
+
+import attrs
+
+from cyclopts.utils import is_class_and_subclass
+
+if sys.version_info >= (3, 12):  # pragma: no cover
+    from typing import TypeAliasType
+else:  # pragma: no cover
+    TypeAliasType = None
+
+NoneType = type(None)
+AnnotatedType = type(Annotated[int, 0])
+
+ITERABLE_TYPES = {
+    Iterable,
+    typing.Sequence,
+    Sequence,
+    frozenset,
+    list,
+    set,
+    tuple,
+}
+
+# Single-element iterables that consume one value per CLI token, so they share ``tuple[X, ...]``'s
+# ``X...`` metavar. Excludes ``tuple`` (fixed arity / explicit ``...``) and mappings (key/value pairs).
+VARIADIC_COLLECTION_TYPES = {
+    Iterable,
+    typing.Sequence,
+    Sequence,
+    Collection,
+    Reversible,
+    MutableSequence,
+    Set,
+    MutableSet,
+    frozenset,
+    list,
+    set,
+}
+
+
+def is_nonetype(hint):
+    return hint is NoneType
+
+
+def is_union(type_: type | None) -> bool:
+    """Checks if a type is a union."""
+    # Direct checks are faster than checking if the type is in a set that contains the union-types.
+    if type_ is Union or type_ is UnionType:
+        return True
+
+    # The ``get_origin`` call is relatively expensive, so we'll check common types
+    # that are passed in here to see if we can avoid calling ``get_origin``.
+    if type_ is str or type_ is int or type_ is float or type_ is bool or is_annotated(type_):
+        return False
+    origin = get_origin(type_)
+    return origin is Union or origin is UnionType
+
+
+def is_pydantic(hint) -> bool:
+    return hasattr(hint, "__pydantic_core_schema__")
+
+
+def is_pydantic_secret(hint) -> bool:
+    """Check if a type is a Pydantic secret type (SecretStr, SecretBytes, Secret, etc.)."""
+    return (
+        hasattr(hint, "__module__")
+        and hint.__module__ == "pydantic.types"
+        and hasattr(hint, "get_secret_value")
+        and callable(getattr(hint, "get_secret_value", None))
+    )
+
+
+def is_dataclass(hint) -> bool:
+    return hasattr(hint, "__dataclass_fields__")
+
+
+def is_namedtuple(hint) -> bool:
+    return is_class_and_subclass(hint, tuple) and hasattr(hint, "_fields")
+
+
+def is_attrs(hint) -> bool:
+    return attrs.has(hint)
+
+
+def is_enum(hint) -> bool:
+    """Check if a type hint is an enum.Enum subclass."""
+    return is_class_and_subclass(hint, Enum)
+
+
+def is_enum_flag(hint) -> bool:
+    """Check if a type hint is an enum.Flag subclass."""
+    return is_class_and_subclass(hint, Flag)
+
+
+def is_annotated(hint) -> bool:
+    return type(hint) is AnnotatedType
+
+
+def is_iterable_type(hint) -> bool:
+    """Check if a type hint is a collection/iterable type (list, set, tuple, etc.).
+
+    Handles Annotated, Optional, TypeAlias, and NewType wrappers.
+    """
+    hint = resolve(hint)
+    origin = get_origin(hint)
+    return is_class_and_subclass(origin, tuple(ITERABLE_TYPES))
+
+
+def contains_hint(hint, target_type) -> bool:
+    """Indicates if ``target_type`` is in a possibly annotated/unioned ``hint``.
+
+    E.g. ``contains_hint(Union[int, str], str) == True``
+    """
+    hint = resolve(hint)
+    if is_union(hint):
+        return any(contains_hint(x, target_type) for x in get_args(hint))
+    else:
+        return is_class_and_subclass(hint, target_type)
+
+
+def is_typeddict(hint) -> bool:
+    """Determine if a type annotation is a TypedDict.
+
+    This is surprisingly hard! Modified from Beartype's implementation:
+
+        https://github.com/beartype/beartype/blob/main/beartype/_util/hint/pep/proposal/utilpep589.py
+    """
+    hint = resolve(hint)
+    if is_union(hint):
+        return any(is_typeddict(x) for x in get_args(hint))
+
+    if not is_class_and_subclass(hint, dict):
+        return False
+
+    return (
+        hasattr(hint, "__annotations__")
+        and hasattr(hint, "__total__")
+        and hasattr(hint, "__required_keys__")
+        and hasattr(hint, "__optional_keys__")
+    )
+
+
+def resolve(
+    type_: Any,
+    *,
+    type_alias: bool = True,
+    annotated: bool = True,
+    optional: bool = True,
+    required: bool = True,
+    new_type: bool = True,
+) -> type:
+    """Perform all simplifying resolutions.
+
+    Parameters
+    ----------
+    type_
+        The type to resolve.
+    type_alias
+        If True (default), resolves Python 3.12+ TypeAliasType to underlying type.
+    annotated
+        If True (default), strips Annotated wrapper to get the base type.
+    optional
+        If True (default), strips NoneType from Optional/Union types.
+        Set to False when you need to preserve NoneType for conversion.
+    required
+        If True (default), strips Required/NotRequired wrappers.
+    new_type
+        If True (default), resolves NewType to its underlying type.
+    """
+    if type_ is inspect.Parameter.empty:
+        return str
+
+    type_prev = None
+    while type_ != type_prev:
+        type_prev = type_
+        if type_alias:
+            type_ = resolve_type_alias(type_)
+        if annotated:
+            type_ = resolve_annotated(type_)
+        if optional:
+            type_ = resolve_optional(type_)
+        if required:
+            type_ = resolve_required(type_)
+        if new_type:
+            type_ = resolve_new_type(type_)
+    return type_
+
+
+def resolve_optional(type_: Any) -> Any:
+    """Only resolves Union's of None + one other type (i.e. Optional)."""
+    type_ = resolve_type_alias(type_)
+    # Python will automatically flatten out nested unions when possible.
+    # So we don't need to loop over resolution.
+    if not is_union(type_):
+        return type_
+
+    non_none_types = [t for t in get_args(type_) if not is_nonetype(t)]
+    if not non_none_types:  # pragma: no cover
+        # This should never happen; python simplifies:
+        #    ``Union[None, None] -> NoneType``
+        raise ValueError("Union type cannot be all NoneType")
+    elif len(non_none_types) == 1:
+        type_ = non_none_types[0]
+    elif len(non_none_types) > 1:
+        return Union[tuple(resolve_optional(x) for x in non_none_types)]  # pyright: ignore  # noqa: UP007
+    else:
+        raise NotImplementedError
+
+    return type_
+
+
+def resolve_annotated(type_: Any) -> type:
+    type_ = resolve_type_alias(type_)
+    if is_annotated(type_):
+        type_ = get_args(type_)[0]
+    elif is_union(type_):
+        # Resolve Annotated inside union members
+        args = get_args(type_)
+        resolved_args = tuple(resolve_annotated(arg) for arg in args)
+        if resolved_args != args:
+            type_ = Union[resolved_args]  # noqa: UP007
+    return type_
+
+
+def get_annotated_discriminator(annotation) -> Any:
+    """Return the ``discriminator`` metadata from an ``Annotated[...]`` hint, else ``None``.
+
+    Only inspects ``Annotated`` hints — for other parameterized types (``list[X]``,
+    ``dict[K, V]``, etc.) this returns ``None`` so that an incidental
+    ``.discriminator`` attribute on a type parameter cannot spuriously match.
+    """
+    if not is_annotated(annotation):
+        return None
+    for meta in get_args(annotation)[1:]:
+        try:
+            return meta.discriminator
+        except AttributeError:
+            pass
+    return None
+
+
+def resolve_required(type_: Any) -> type:
+    if get_origin(type_) in (Required, NotRequired):
+        type_ = get_args(type_)[0]
+    return type_
+
+
+def is_unpack(type_: Any) -> bool:
+    """Check if a type is ``typing.Unpack[...]`` (PEP-646 / PEP-692).
+
+    Looks through ``Annotated[...]`` wrappers.
+    """
+    return get_origin(resolve_annotated(type_)) is Unpack
+
+
+def resolve_unpack(type_: Any) -> Any:
+    """Unwrap ``Unpack[X]`` to ``X``. If not an ``Unpack``, returns ``type_`` unchanged.
+
+    Looks through ``Annotated[...]`` wrappers.
+    """
+    type_ = resolve_annotated(type_)
+    if get_origin(type_) is Unpack:
+        return get_args(type_)[0]
+    return type_
+
+
+def resolve_new_type(type_: Any) -> type:
+    try:
+        return resolve_new_type(type_.__supertype__)
+    except AttributeError:
+        return type_
+
+
+def resolve_type_alias(type_: Any) -> Any:
+    """Resolve TypeAliasType (Python 3.12+ 'type' statement) to its underlying type."""
+    if TypeAliasType is not None and isinstance(type_, TypeAliasType):
+        return type_.__value__
+    return type_
+
+
+def get_hint_name(hint) -> str:
+    if isinstance(hint, str):
+        return hint
+    if is_nonetype(hint):
+        return "None"
+    if hint is Any:
+        return "Any"
+    if is_annotated(hint):
+        return get_hint_name(get_args(hint)[0])
+    if is_union(hint):
+        return "|".join(get_hint_name(arg) for arg in get_args(hint))
+    if origin := get_origin(hint):
+        out = get_hint_name(origin)
+        if args := get_args(hint):
+            out += "[" + ", ".join(get_hint_name(arg) for arg in args) + "]"
+        return out
+    if hasattr(hint, "__name__"):
+        return hint.__name__
+    if getattr(hint, "_name", None) is not None:
+        return hint._name
+    return str(hint)
+
+
+def contains_enum(hint) -> bool:
+    """Whether an ``Enum`` appears anywhere in ``hint`` (through ``Annotated``, unions, iterables, aliases)."""
+    hint = resolve_type_alias(hint)
+    return is_enum(hint) or any(contains_enum(arg) for arg in get_args(hint) if arg is not Ellipsis)
+
+
+def get_choices_from_hint(type_: Any, name_transform: Callable[[str], str]) -> list[str]:
+    """Extract completion choices from a type hint.
+
+    Recursively extracts choices from Literal types, Enum types, and Union types.
+
+    Parameters
+    ----------
+    type_ : Any
+        Type annotation to extract choices from.
+    name_transform : Callable[[str], str]
+        Function to transform choice names (e.g., for case conversion).
+
+    Returns
+    -------
+    list[str]
+        List of choice strings extracted from the type hint.
+    """
+    get_choices = partial(get_choices_from_hint, name_transform=name_transform)
+    choices = []
+    _origin = get_origin(type_)
+    if is_enum(type_):
+        choices.extend(name_transform(x) for x in type_.__members__)
+    elif is_union(_origin):
+        inner_choices = [get_choices(inner) for inner in get_args(type_)]
+        for x in inner_choices:
+            if x:
+                choices.extend(x)
+    elif _origin is Literal:
+        choices.extend(str(x) for x in get_args(type_))
+    elif is_iterable_type(type_):
+        args = get_args(type_)
+        if len(args) == 1 or (_origin is tuple and len(args) == 2 and args[1] is Ellipsis):
+            choices.extend(get_choices(args[0]))
+    elif _origin is Annotated:
+        choices.extend(get_choices(resolve_annotated(type_)))
+    elif TypeAliasType is not None and isinstance(type_, TypeAliasType):
+        choices.extend(get_choices(type_.__value__))
+    return choices

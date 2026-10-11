@@ -1,0 +1,17 @@
+opentelemetry/exporter/http/transport/__init__.py,sha256=C7zfQBL8UD9DV7CLu1-H8KPjVaZBcg2R0swwhJaBgyA,2517
+opentelemetry/exporter/http/transport/__pycache__/__init__.cpython-312.pyc,,
+opentelemetry/exporter/http/transport/__pycache__/_base.cpython-312.pyc,,
+opentelemetry/exporter/http/transport/__pycache__/_requests.cpython-312.pyc,,
+opentelemetry/exporter/http/transport/__pycache__/_urllib3.cpython-312.pyc,,
+opentelemetry/exporter/http/transport/_base.py,sha256=_moaGC3FbSTVZQ2y7WGklq76Ezhxk7ckfRJvKl7Zcwc,2821
+opentelemetry/exporter/http/transport/_requests.py,sha256=9BY7eiys5nu37LCeQwjOq9ZMvRgR5A05DNqUBJ0xtow,3328
+opentelemetry/exporter/http/transport/_urllib3.py,sha256=duvbcoaDGnDUHlupvyBwzt-ws6iNWTTOk3pcOFwPZxM,3994
+opentelemetry/exporter/http/transport/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+opentelemetry/exporter/http/transport/version/__init__.py,sha256=aMVTEQ1vsfaCdCt8Yb_XGFq9ojH9GmqhS5KpGQ84WwM,100
+opentelemetry/exporter/http/transport/version/__pycache__/__init__.cpython-312.pyc,,
+opentelemetry_exporter_http_transport-0.66b1.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+opentelemetry_exporter_http_transport-0.66b1.dist-info/METADATA,sha256=E_kYpFZEXy_23Jey98zKaugD5knPeIjMn7cK3FUEIl0,2335
+opentelemetry_exporter_http_transport-0.66b1.dist-info/RECORD,,
+opentelemetry_exporter_http_transport-0.66b1.dist-info/WHEEL,sha256=W3fkpkm7-wf9vBI5Z-7s0eWkeM-spu78I8Neb98DeEg,87
+opentelemetry_exporter_http_transport-0.66b1.dist-info/entry_points.txt,sha256=ym3X1kBWkiEPLmr-yTZ8XE4quzwGoHTNup_YTEnZsHc,190
+opentelemetry_exporter_http_transport-0.66b1.dist-info/licenses/LICENSE,sha256=xx0jnfkXJvxRnG63LTGOxlggYnIysveWIZ6H3PNdCrQ,11357

@@ -1,0 +1,16 @@
+linkify_it/__init__.py,sha256=udz3Es5MSLBSGjfFBHQXv7qHlaFXoFIq7xvQshw7mLo,111
+linkify_it/__pycache__/__init__.cpython-312.pyc,,
+linkify_it/__pycache__/_ucre_data.cpython-312.pyc,,
+linkify_it/__pycache__/main.cpython-312.pyc,,
+linkify_it/__pycache__/tlds.cpython-312.pyc,,
+linkify_it/__pycache__/ucre.cpython-312.pyc,,
+linkify_it/_ucre_data.py,sha256=oPqUs8fkACWTd8IVZjcYZ4e1RjhLcGAfUB1GzwpEp7E,3191
+linkify_it/main.py,sha256=PTgD_5vWzqzQTZhLHTwgZfH4_XCCwr2wxAuIi35Op74,23699
+linkify_it/tlds.py,sha256=oiIQOb7vdyQjcZSsO9HlEw4roC1ibeDPyN8cJuq_XJs,20792
+linkify_it/ucre.py,sha256=NqrHm2zJn-vOR_JQMZkquuCLFtmDxgMOwTfN0VpJfm4,7273
+linkify_it_py-2.2.0.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+linkify_it_py-2.2.0.dist-info/METADATA,sha256=W8ES96Mi7B2LOnHDNX2vY0A1P3c604b6l4TCLegznrk,8553
+linkify_it_py-2.2.0.dist-info/RECORD,,
+linkify_it_py-2.2.0.dist-info/WHEEL,sha256=YVMoNqKzERt-wjUZwJ33xBGAwnFl-4cqbYkTtWa4itE,91
+linkify_it_py-2.2.0.dist-info/licenses/LICENSE,sha256=211x9h8PeB9QeN9LagDV08eZ-wu4K89EimiOl2Jhii4,2234
+linkify_it_py-2.2.0.dist-info/top_level.txt,sha256=GX2cfxY-SBCSdp6rvG1YSnI4SQrTxT8tzUFHFvfiM2s,11

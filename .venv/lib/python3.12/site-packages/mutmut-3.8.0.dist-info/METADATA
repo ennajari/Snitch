@@ -1,0 +1,676 @@
+Metadata-Version: 2.4
+Name: mutmut
+Version: 3.8.0
+Summary: mutation testing for Python 3
+Keywords: mutmut,mutant,mutation,test,testing
+Author: Anders Hovmöller
+Author-email: Anders Hovmöller <boxed@killingar.net>
+License-Expression: BSD-3-Clause
+License-File: LICENSE
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: 3.15
+Requires-Dist: click>=8.4.2
+Requires-Dist: coverage>=7.3.0
+Requires-Dist: libcst>=1.9.0
+Requires-Dist: pytest>=6.2.5
+Requires-Dist: setproctitle>=1.3.7
+Requires-Dist: textual>=1.0.0
+Requires-Dist: toml>=0.10.2 ; python_full_version < '3.11'
+Requires-Python: >=3.10
+Project-URL: Homepage, https://github.com/boxed/mutmut
+Project-URL: Documentation, https://mutmut.readthedocs.io/en/latest/
+Project-URL: Repository, https://github.com/boxed/mutmut
+Project-URL: Issues, https://github.com/boxed/mutmut/issues
+Project-URL: Changelog, https://github.com/boxed/mutmut/blob/main/HISTORY.rst
+Description-Content-Type: text/x-rst
+
+mutmut - python mutation tester
+===============================
+
+.. image:: https://github.com/boxed/mutmut/actions/workflows/tests.yml/badge.svg
+    :target: https://github.com/boxed/mutmut/actions/workflows/tests.yml
+
+.. image:: https://readthedocs.org/projects/mutmut/badge/?version=latest
+    :target: https://mutmut.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
+
+Mutmut is a mutation testing system for Python, with a strong focus on ease
+of use. If you don't know what mutation testing is try starting with
+`this article <https://kodare.net/2016/12/01/mutmut-a-python-mutation-testing-system.html>`_.
+
+Some highlight features:
+
+- Found mutants can be applied on disk with a simple command making it very
+  easy to work with the results
+- Remembers work that has been done, so you can work incrementally
+- Knows which tests to execute, speeding up mutation testing
+- Interactive terminal based UI
+- Parallel and fast execution
+
+.. image:: browse_screenshot.png
+
+
+If you want to mutate code outside of functions, you can try using mutmut 2,
+which has a different execution model than mutmut 3+.
+
+
+Requirements
+------------
+
+Mutmut must be run on a system with `fork` support. This means that if you want
+to run on windows, you must run inside WSL.
+
+
+
+Install and run
+---------------
+
+You can get started with a simple:
+
+.. code-block:: console
+
+    pip install mutmut
+    mutmut run
+
+This will run pytest on tests in the "tests" or "test" folder and
+it will try to figure out where the code to mutate is.
+
+
+
+You can stop the mutation run at any time and mutmut will restart where you
+left off.
+
+To work with the results, use `mutmut browse` where you can see the mutants,
+retest them when you've updated your tests.
+
+You can also write a mutant to disk from the `browse` interface, or via
+`mutmut apply <mutant>`. You should **REALLY** have the file you mutate under
+source code control and committed before you apply a mutant!
+
+
+If during the installation you get an error for the `libcst` dependency mentioning the lack of a rust compiler on your system, it is because your architecture does not have a prebuilt binary for `libcst` and it requires both `rustc` and `cargo` from the `rust toolchain <https://www.rust-lang.org/tools/install>`_ to be built. This is known for at least the `x86_64-darwin` architecture.
+
+
+Wildcards for testing mutants
+-----------------------------
+
+Unix filename pattern matching style on mutants is supported. Example:
+
+.. code-block:: console
+
+    mutmut run "my_module*"
+    mutmut run "my_module.my_function*"
+
+In the `browse` TUI you can press `f` to retest a function, and `m` to retest
+an entire module.
+
+
+Configuration
+-------------
+
+In `setup.cfg` in the root of your project you can configure mutmut if you need to:
+
+.. code-block:: ini
+
+    [mutmut]
+    source_paths=src/
+    pytest_add_cli_args_test_selection=tests/
+
+If you use `pyproject.toml`, you must specify the paths as array in a `tool.mutmut` section:
+
+.. code-block:: toml
+
+    [tool.mutmut]
+    source_paths = [ "src/" ]
+    pytest_add_cli_args_test_selection= [ "tests/" ]
+
+See below for more options for configuring mutmut.
+
+
+"also copy" files
+~~~~~~~~~~~~~~~~~
+
+To run the full test suite some files are often needed above the tests and the
+source. You can configure to copy extra files that you need by adding
+directories and files to `also_copy` in your `setup.cfg`:
+
+.. code-block:: ini
+
+    also_copy=
+        iommi/snapshots/
+        conftest.py
+
+
+Limit stack depth
+~~~~~~~~~~~~~~~~~
+
+In big code bases some functions are called incidentally by huge swaths of the
+codebase, but you really don't want tests that hit those executions to count
+for mutation testing purposes. Incidentally tested functions lead to slow
+mutation testing as hundreds of tests can be checked for things that should
+have clean and fast unit tests, and it leads to bad test suites as any
+introduced bug in those base functions will lead to many tests that fail which
+are hard to understand how they relate to the function with the change.
+
+You can configure mutmut to only count a test as being relevant for a function
+if the stack depth is below some limit. Only stack frames from code inside `source_paths`
+is counted towards the limit, 3rd party libraries are ignored. In your `setup.cfg` add:
+
+.. code-block:: ini
+
+    max_stack_depth=8
+
+A lower value will increase mutation speed and lead to more localized tests,
+but will also lead to more surviving mutants that would otherwise have been
+caught.
+
+
+Exclude files from mutation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default mutmut mutates all python files in `source_paths`.
+You can exclude files from mutation in `setup.cfg`:
+
+.. code-block::
+
+    only_mutate=
+        src/api/*
+        src/services/*
+    do_not_mutate=
+        *__tests.py
+
+
+Enable coverage.py filtering of lines to mutate
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, mutmut will mutate only functions that are called. But, if you would like a finer grained (line-level)
+check for coverage, mutmut can use coverage.py to do that.
+
+If you only want to mutate lines that are called (according to coverage.py), you can set
+`mutate_only_covered_lines` to `true` in your configuration. The default value is `false`.
+
+
+.. code-block::
+
+    mutate_only_covered_lines=true
+
+This also honours the lines coverage.py is told to leave out of its measurement, so code
+marked with `# pragma: no cover`, or matched by your `exclude_lines`/`exclude_also`
+settings, is not mutated either. Such code is not held to your test suite, so mutants
+there could only ever show up as survivors.
+
+
+Filter generated mutants with type checker
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When your project is type checked using `mypy` or `pyrefly`, you can also use it to filter out invalid mutants.
+For instance, mutmut mutates `x: str = 'foo'` to `x: str = None` which can easily caught by type checkers.
+
+Using this filter can improve performance and reduce noise, however it can also hide a few relevant mutations:
+
+1. `x: str = None` may not be valid, but if your tests do not detect such a change it indicates that
+    the value of `x` is not properly tested (even if your type checker would catch this particular modification)
+2. In some edge cases with class properties (usually in the `__init__` method), the way `mypy` and `pyrefly` infer types does not work well
+    with the way mutmut mutates code. Some valid mutations like changing `self.x = 123` to `self.x = None` can
+    be filtered out, even though the may be valid.
+
+To enable this filtering, configure the `type_check_command` to output json results as follows:
+
+.. code-block::
+
+    # for pyrefly
+    type_check_command = ['pyrefly', 'check', '--output-format=json']
+    # for mypy
+    type_check_command = ['mypy', 'your_source_dir', '--output', 'json', '--disable-error-code', 'unused-ignore']
+
+Currently, only `pyrefly` and `mypy` are supported.
+With `pyright` and `ty`, mutating a class method `Foo.bar()` can break the types of all methods of `Foo`,
+and therefore mutmut cannot match the type error with the mutant that caused the type error.
+
+
+Enable debug output (increase verbosity)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default, mutmut "swallows" all the test output etc. so that you get a nice clean output.
+
+If you want to see all the detail to aid with debugging, you can set `debug` to `true` in your configuration.
+Note that not all displayed errors are necessarily bad. In particular test runs of the mutated code will lead
+to failing tests.
+
+.. code-block::
+
+    debug=true
+
+
+Disable setproctitle (macOS)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Mutmut uses ``setproctitle`` to show the current mutant name in the process
+list, which is helpful for monitoring long runs. However, ``setproctitle``
+uses CoreFoundation APIs on macOS that are not fork-safe, causing segfaults
+in child processes.
+
+By default, mutmut automatically disables ``setproctitle`` on macOS and
+enables it on other platforms. If you need to override this (e.g. to enable it on
+macOS at your own risk, or to disable it on other platforms), set ``use_setproctitle``:
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    use_setproctitle = false
+
+
+Process isolation (``fork`` vs ``forkserver``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    process_isolation = "fork"  # or "forkserver"
+
+Both strategies require ``os.fork``, so they are POSIX-only.
+
+``fork`` (default)
+    Mutmut's main process imports pytest and runs your test suite to collect
+    stats, then forks one child per mutant. This is fast and needs no
+    configuration, but every mutant worker inherits whatever your test setup
+    left behind in that process: monkey-patched sockets, running event loops,
+    background threads, open database connections, CUDA contexts. If any of
+    that is not fork-safe, the workers can hang, segfault, or report nonsense.
+
+``forkserver``
+    Mutmut's main process never imports pytest or your ``conftest.py``. It forks
+    a dedicated *fork server* child, and that child does the importing once and
+    forks a worker per mutant::
+
+        main process (clean) -> fork server (imports pytest) -> N mutant workers
+
+    Because the fork server only imports and forks, and never runs a test
+    itself, every worker starts from the same predictable state. This is the
+    same design as the ``forkserver`` start method in Python's
+    ``multiprocessing``, and it is still only one pytest import for the whole
+    run, so it is not slower than ``fork`` in the normal case.
+
+**Which one should you use?** Start with ``fork``. Switch to ``forkserver`` if
+your run hangs, crashes, or gives results you cannot reproduce by running the
+tests by hand, and your test setup touches something known to be fork-unsafe,
+such as ``gevent.monkey.patch_all()``, ``grpc``, or ``torch``. It is also the
+better choice if you simply do not want your session-scoped setup living in the
+process that forks mutants.
+
+
+Tuning what the fork server preloads
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``forkserver_warmup`` controls how much the fork server imports before it starts
+forking workers. It only applies when ``process_isolation = "forkserver"``.
+Anything imported in the fork server is inherited by every  worker, and anything
+left out is imported in each worker.
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    process_isolation = "forkserver"
+    forkserver_warmup = "collect"  # "collect" (default), "import" or "none"
+
+``collect`` (default)
+    Run ``pytest --collect-only``, which imports your ``conftest.py``, your
+    plugins and your test modules. This is the right default for most projects
+    and usually the fastest.
+
+``import``
+    Import only the modules listed in ``preload_modules_file`` (one dotted
+    module name per line; blank lines and ``#`` comments are ignored, and
+    modules that fail to import are skipped). Use this when test *collection*
+    itself has side effects you do not want every worker to share, but you still
+    want your slow imports warmed up.
+
+``none``
+    Import nothing beyond what running a single test requires. This is the
+    slowest option, and the most isolated. It is mostly useful for working out
+    whether a warmup side effect is what is breaking your run.
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    process_isolation = "forkserver"
+    forkserver_warmup = "import"
+    preload_modules_file = "mutmut_preload.txt"
+
+If the fork server itself crashes, mutmut starts a new one and re-submits the
+mutants that were in flight, up to ``max_forkserver_restarts`` times (default
+``3``) before giving up with a ``ForkServerCrashError``:
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    max_forkserver_restarts = 3
+
+The fork server and its workers cannot write to the console without mangling
+mutmut's progress output, so they log to a file instead. Logging is off unless
+you ask for it with ``log_to_file`` (or ``debug``):
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    log_to_file = true
+    log_file_path = "mutants/mutmut-debug.log"
+
+
+Disabling mutation on specific code
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you do not want to mutate specific parts of your code, you can disable mutation
+via the following options. Examples where this could be relevant:
+
+- If you don't want to test exact log messages (e.g. `logging.info("Foo")` versus the mutated `logging.info("XXFooXX")`)
+- Optimizing break instead of continue. The code runs fine when mutating break
+  to continue, but it's slower.
+
+Skipping via regex
+^^^^^^^^^^^^^^^^^^
+
+You can use a regex on the source code, to tell mutmut which expressions it should not mutate:
+
+.. code-block:: toml
+
+    # pyproject.toml
+    [tool.mutmut]
+    do_not_mutate_patterns = [
+        # disable mutations of all logger.info/debug/... statements
+        'logger\.\w+',
+        # disable mutating exceptions
+        'raise \w+',
+    ]
+
+Mutmut will match the regex on the source code
+and skip mutating any expression on the matched lines.
+
+Skipping via code comments
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can use following comments to disable mutation:
+
+- `# pragma: no mutate`: disable mutation on this single line
+- `# pragma: no mutate block`: disable mutation in the whole intendation block
+- `# pragma: no mutate start/end`: disable mutation between the start and end comments
+
+Skipping single lines
+^^^^^^^^^^^^^^^^^^^^^
+
+You can mark lines like this to stop mutating them:
+
+.. code-block:: python
+
+    some_code_here()  # pragma: no mutate
+
+
+Skipping Code Blocks
+^^^^^^^^^^^^^^^^^^^^
+
+You can skip an entire indentation block from mutation using
+``# pragma: no mutate block``. This works on any compound statement --
+functions, classes, ``if``/``elif``/``else``, loops, context managers, etc.
+
+Both syntax styles are supported:
+
+- ``# pragma: no mutate block``
+- ``# pragma: no mutate: block``
+
+**Skipping an entire function or class** -- place the pragma inline on the
+definition line. The entire node (including all children) is skipped and no
+trampoline is generated:
+
+.. code-block:: python
+
+    def complex_algorithm():  # pragma: no mutate block
+        return some_complex_calculation()
+
+    class MySettings:  # pragma: no mutate block
+        DEBUG = True
+        MAX_RETRIES = 3
+
+**Skipping only the body of a function** -- place the pragma on its own line
+inside the function. The function definition (including default arguments) is
+still mutable, but the body is suppressed:
+
+.. code-block:: python
+
+    def foo(val=1):
+        # pragma: no mutate block
+        x = 1
+        y = complex_calculation()
+        z = x + y
+
+    def bar():
+        # this function is still mutated normally
+        return 42
+
+**Skipping an ``if`` branch without affecting ``elif``/``else``** -- place
+the pragma inline on the ``if``. Only the ``if`` condition and its indented
+body are suppressed; sibling branches (``elif``, ``else``) remain mutable
+because they exit the original indentation scope:
+
+.. code-block:: python
+
+    if error_condition:  # pragma: no mutate block
+        log_error()
+        send_alert()
+    elif other_condition:
+        # still mutated -- this branch is outside the block scope
+        handle_other()
+    else:
+        # still mutated
+        handle_success()
+
+The same principle applies to ``for``/``else``, ``while``/``else``,
+``try``/``except``/``finally``, and ``match``/``case``.
+
+This is useful for:
+
+- Functions or classes that should be excluded from mutation entirely
+- Error-handling branches that are hard to unit test in isolation
+- Logging or telemetry blocks that don't affect program correctness
+- Generated or boilerplate code within an otherwise mutable function
+
+
+Skipping Code Regions
+^^^^^^^^^^^^^^^^^^^^^
+
+For suppressing mutations across a range of lines regardless of indentation,
+use ``# pragma: no mutate start`` and ``# pragma: no mutate end``:
+
+.. code-block:: python
+
+    a = mutate_this()
+
+    # pragma: no mutate start
+    b = skip_this()
+    c = skip_this_too()
+    # pragma: no mutate end
+
+    d = mutate_this_too()
+
+Every line between the markers (inclusive) is suppressed. This works inside
+functions, classes, or at module level, and ignores indentation entirely.
+
+An unmatched ``# pragma: no mutate end`` without a preceding ``start`` raises
+a ``PragmaParseError`` at parse time.  An unclosed ``# pragma: no mutate start``
+(no matching ``end`` before end-of-file) raises a ``PragmaParseError``.
+Both errors include the filename and line number.
+
+**Nesting restriction:** opening a new ``block`` or ``start`` context while
+another context is already active is not allowed and raises a
+``PragmaParseError``.  The error message includes both the offending line and
+the line where the existing context was opened.  Close the current context
+first (dedent for ``block``, or ``# pragma: no mutate end`` for ``start``)
+before opening a new one.
+
+
+Modifying pytest arguments
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can add and override pytest arguments:
+
+.. code-block:: python
+
+    # for CLI args that select or deselect tests, use `pytest_add_cli_args_test_selection`
+    pytest_add_cli_args_test_selection = ["-m", "not fail", "-k", "test_include"]
+
+    # for other CLI args, use `pytest_add_cli_args`
+    pytest_add_cli_args = ["-p", "no:some_plugin"] # disable a plugin
+    pytest_add_cli_args = ["-o", "xfail_strict=False"] # overrides xfail_strict from your normal config
+
+    # if you want to ignore the normal pytest configuration
+    # you can specify a diferent pytest ini file to be used
+    pytest_add_cli_args = ["-c", "mutmut_pytest.ini"]
+    also_copy = ["mutmut_pytest.ini"]
+
+
+Detecting dependency and config changes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Between runs, mutmut only re-tests mutants in functions whose source changed.
+Changes outside your Python source — a dependency upgrade, a data file, a
+config file — cannot be tied to a function, so they would otherwise be missed
+and you would get cached results that no longer reflect reality.
+
+To catch this, mutmut detects non-Python files that changed since the last full
+run and warns you about them. If your project is a git repository and git is
+installed, mutmut uses git (a soft dependency no extra package is required) to
+find every changed non-Python file, respecting your `.gitignore`. Python files
+are excluded because their changes are already tracked per function.
+
+On a full run with git available, mutmut also records the content hashes of the
+tracked non-Python files. This means a later run in an environment without git
+(for example a different CI stage) can still detect changes to that known set of
+files, even though it cannot discover brand-new ones.
+
+When git is unavailable, mutmut falls back to hashing a curated set of build and
+dependency files:
+
+- `pyproject.toml`
+- `setup.cfg`
+- `setup.py`
+- `requirements*.txt`
+- `poetry.lock`
+- `uv.lock`
+- `Pipfile`
+- `Pipfile.lock`
+
+You can watch additional files (for example data files your tests depend on)
+with the `cache_invalidation_files` config, which accepts glob patterns
+resolved against the project root. These are checked even when git ignores them,
+and are never dropped by the exclusions below:
+
+.. code-block:: toml
+
+    cache_invalidation_files = [ "queries/*.sql", "config/*.yaml" ]
+
+Git detection reports every changed non-Python file, so mutmut drops files that
+practically never affect tests (markdown, `LICENSE`, `CHANGELOG`, `docs/`, git
+and editor metadata, ...). Exclude additional noisy files with
+`cache_invalidation_exclude` (glob patterns, `*` spans directories):
+
+.. code-block:: toml
+
+    cache_invalidation_exclude = [ "*.json", "fixtures/snapshots/*" ]
+
+When a watched file changes, `on_dependency_change` controls what happens:
+
+- `warn` (default): list the changed files and keep the cache.
+- `rerun`: re-test all mutants.
+- `ignore`: do nothing.
+
+.. code-block:: toml
+
+    on_dependency_change = "warn"
+
+Git detection is on by default; disable it (forcing the curated-list fallback)
+with:
+
+.. code-block:: toml
+
+    use_git_change_detection = false
+
+Changes to mutmut's own result-affecting config (such as `pytest_add_cli_args`,
+`type_check_command`, or the timeout settings) are always detected and
+invalidate the affected cached results automatically.
+
+
+Unstable configs
+~~~~~~~~~~~~~~~~
+
+Following configurations exist, but may be changed in any minor version.
+If you use them, expect that a new version could change or break this feature.
+
+
+.. code-block:: toml
+
+    # Configure how long mutmut waits before killing a slow mutation
+    # Currently calculated as (duration_of_original_tests + timeout_constant) * timeout_multiplier seconds
+    timeout_constant = 1.0
+    timeout_multiplier = 15.0
+
+
+Example mutations
+-----------------
+
+- Integer literals are changed by adding 1. So 0 becomes 1, 5 becomes 6, etc.
+- `<` is changed to `<=`
+- break is changed to continue and vice versa
+
+In general the idea is that the mutations should be as subtle as possible.
+See `node_mutation.py` for the full list and `test_mutation.py` for tests describing them.
+
+
+Workflow
+--------
+
+This section describes how to work with mutmut to enhance your test suite.
+
+1. Run mutmut with `mutmut run`. A full run is preferred but if you're just
+   getting started you can exit in the middle and start working with what you
+   have found so far.
+2. Show the mutants with `mutmut browse`
+3. Find a mutant you want to work on and write a test to try to kill it.
+4. Press `r` to rerun the mutant and see if you successfully managed to kill it.
+
+Mutmut keeps the data of what it has done and the mutants in the `mutants/`
+directory. If you want to make sure you run a full mutmut run you can delete
+this directory to start from scratch.
+
+
+Mutation score badges
+---------------------
+
+`mutmut badge` turns `mutmut export-cicd-stats` output into `Shields endpoint JSON <https://shields.io/badges/endpoint-badge>`_:
+
+.. code-block:: console
+
+    mutmut export-cicd-stats
+    mutmut badge --output mutation-score.json
+
+.. code-block:: md
+
+    ![mutation](https://img.shields.io/endpoint?url=https://example.com/mutation-score.json)
+
+Contributing to Mutmut
+----------------------
+
+If you wish to contribute to Mutmut, please see our `contributing guide <CONTRIBUTING.rst>`_.

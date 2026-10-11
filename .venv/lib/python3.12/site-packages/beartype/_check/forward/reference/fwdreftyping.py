@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+# --------------------( LICENSE                            )--------------------
+# Copyright (c) 2014-2026 Beartype authors.
+# See "LICENSE" for further details.
+
+'''
+**Beartype forward reference type hints** (i.e., PEP-compliant type hints
+matching :mod:`beartype`-specific forward reference proxies).
+
+This private submodule is *not* intended for importation by downstream callers.
+'''
+
+# ....................{ IMPORTS                            }....................
+from beartype._check.forward.reference._cls.fwdrefabc import (
+    BeartypeForwardRefABC)
+from beartype._check.forward.reference._cls.fwdreffake import (
+    BeartypeForwardRefFakeABC)
+
+# ....................{ HINTS ~ type                       }....................
+#FIXME: Replace all unsafe external references to the private
+#"BeartypeForwardRefMetaclass" type with safe references to this type hint instead.
+BeartypeForwardRef = type[BeartypeForwardRefABC]
+'''
+:pep:`585`-compliant type hint matching a :mod:`beartype`-specific **forward
+reference proxy** (i.e., class whose metaclass defers the resolution of a
+forward reference type hint referencing a type hint that has yet to be defined
+in the lexical scope of the external caller).
+'''
+
+
+BeartypeForwardRefFake = type[BeartypeForwardRefFakeABC]
+'''
+:pep:`585`-compliant type hint matching a :mod:`beartype`-specific **forward
+reference fake proxy** (i.e., class whose metaclass pretends to proxy calls to
+the :func:`isinstance` and :func:`issubclass` builtins against some externally
+defined type when passed that proxy as their second parameters, typically due to
+the inaccessibility of that type in the lexical scope in which that proxy is
+accessed).
+'''
+
+# ....................{ HINTS ~ tuple                      }....................
+TupleBeartypeForwardRefs = tuple[BeartypeForwardRef, ...]
+'''
+:pep:`585`-compliant type hint matching a tuple of zero or more
+:mod:`beartype`-specific forward reference proxies.
+'''

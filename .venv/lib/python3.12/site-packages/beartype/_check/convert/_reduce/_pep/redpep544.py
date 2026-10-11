@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+# --------------------( LICENSE                            )--------------------
+# Copyright (c) 2014-2026 Beartype authors.
+# See "LICENSE" for further details.
+
+'''
+Project-wide :pep:`544`-compliant **type alias reducers** (i.e., low-level
+callables converting higher-level protocols to lower-level type hints more
+readily consumable by :mod:`beartype`).
+
+This private submodule is *not* intended for importation by downstream callers.
+'''
+
+# ....................{ IMPORTS                            }....................
+from beartype.roar import BeartypeDecorHintPep544Exception
+from beartype._check.cls.hint.hintsane import (
+    HINT_SANE_IGNORABLE,
+    HintOrSane,
+)
+from beartype._data.cls.pep.pep544.io.dataclspep544io import (
+    HINT_PEP484_IO_GENERIC_TO_PEP544_PROTOCOL)
+from beartype._data.typing.datatypingport import Hint
+from beartype._util.hint.pep.proposal.pep544 import (
+    is_hint_pep484_generic_io,
+    is_hint_pep544_protocol_supertype,
+)
+from beartype._util.hint.pep.utilpepget import (
+    get_hint_pep_origin_or_none,
+    get_hint_pep_typeargs_packed,
+)
+
+# ....................{ REDUCERS                           }....................
+def reduce_hint_pep544(hint: Hint) -> HintOrSane:
+    '''
+    Reduce the passed :pep:`544`-compliant **protocol** (i.e., user-defined
+    subclass of the :class:`typing.Protocol` abstract base class (ABC)) to the
+    ignorable :data:`.HINT_SANE_IGNORABLE` singleton if this protocol is a
+    parametrization of this ABC by one or more :pep:`484`-compliant **type
+    variables** (i.e., :class:`typing.TypeVar` objects).
+
+    As the name implies, this ABC is generic and thus fails to impose any
+    meaningful constraints. Since a type variable in and of itself also fails to
+    impose any meaningful constraints, these parametrizations are safely
+    ignorable in all possible runtime contexts: e.g.,
+
+    .. code-block:: python
+
+       from typing import Protocol, TypeVar
+       T = TypeVar('T')
+       def noop(param_hint_ignorable: Protocol[T]) -> T: pass
+
+    This reducer is intentionally *not* memoized (e.g., by the
+    ``callable_cached`` decorator), as reducers cannot be memoized.
+
+    Parameters
+    ----------
+    hint : Hint
+        Type hint to be reduced.
+
+    Returns
+    -------
+    HintOrSane
+        Lower-level type hint currently supported by :mod:`beartype`.
+    '''
+
+    # If this protocol is an unsubscripted
+    # "(typing|typing_extension|beartype.typing).Protocol" superclass, then this
+    # protocol is ignorable. Reduce this ignorable protocol to the ignorable
+    # singleton.
+    #
+    # For unknown (but probably) uninteresting reasons, *ALL* possible objects
+    # satisfy these protocol superclasses. Ergo, these superclasses and *ALL*
+    # parametrizations of these superclasses are synonymous with the root
+    # "object" superclass: e.g.,
+    #     >>> from typing as Protocol
+    #     >>> isinstance(object(), Protocol)
+    #     True
+    #     >>> isinstance('wtfbro', Protocol)
+    #     True
+    #     >>> isinstance(0x696969, Protocol)
+    #     True
+    if is_hint_pep544_protocol_supertype(hint):
+        return HINT_SANE_IGNORABLE
+
+    # Type originating this protocol if any *OR* "None" otherwise.
+    #
+    # Note that we intentionally avoid calling the
+    # get_hint_pep_origin_type_isinstanceable_or_none() function here, which has
+    # been intentionally designed to exclude PEP-compliant type hints
+    # originating from "typing" type origins for stability reasons.
+    hint_origin = get_hint_pep_origin_or_none(hint)
+
+    # If...
+    if (
+        # Some type originates this protocol *AND*...
+        hint_origin is not None and
+        # This origin type is an unsubscripted
+        # "(typing|typing_extension|beartype.typing).Protocol" superclass...
+        is_hint_pep544_protocol_supertype(hint_origin)
+    ):
+        # Then the passed protocol is a
+        # "(typing|typing_extension|beartype.typing).Protocol" superclass
+        # subscripted by one or more PEP 484-compliant type variables (e.g.,
+        # "typing.Protocol[T]"). Since these type variables convey *NO*
+        # meaningful semantics in this context, this protocol is ignorable by a
+        # similar argument as above.
+        #
+        # Note that protocol superclasses can *ONLY* be parametrized by type
+        # variables.
+        return HINT_SANE_IGNORABLE
+    # Else, this protocol is unignorable.
+
+    # Preserve this unignorable protocol.
+    return hint
+
+
+def reduce_hint_pep484_generic_io_to_pep544_protocol(
+    hint: Hint, exception_prefix: str) -> Hint:
+    '''
+    :pep:`544`-compliant :mod:`beartype` **IO protocol** (i.e., either
+    :class:`beartype._util.hint.pep.proposal.pep544.Pep544IO` itself *or* a
+    subclass of that class defined by this submodule intentionally designed to
+    be usable at runtime) corresponding to the passed :pep:`484`-compliant
+    :mod:`typing` **IO generic base class** (i.e., either :class:`typing.IO`
+    itself *or* a subclass of :class:`typing.IO` defined by the :mod:`typing`
+    module, both unusable at runtime due to botched implementation details).
+
+    This reducer is effectively memoized thanks to caching internally performed
+    by this reducer.
+
+    Parameters
+    ----------
+    hint : Hint
+        :pep:`484`-compliant :mod:`typing` IO generic base class to be replaced
+        by the corresponding :pep:`544`-compliant :mod:`beartype` IO protocol.
+    exception_prefix : str
+        Human-readable label prefixing the representation of this object in the
+        exception message.
+
+    Returns
+    -------
+    Protocol
+        :pep:`544`-compliant :mod:`beartype` IO protocol corresponding to this
+        :pep:`484`-compliant :mod:`typing` IO generic base class.
+
+    Raises
+    ------
+    BeartypeDecorHintPep544Exception
+        If this object is *not* a :pep:`484`-compliant IO generic base class.
+    '''
+
+    # If this object is *NOT* a PEP 484-compliant "typing" IO generic,
+    # raise an exception.
+    if not is_hint_pep484_generic_io(hint):
+        raise BeartypeDecorHintPep544Exception(
+            f'{exception_prefix}type hint {repr(hint)} not '
+            f'PEP 484 IO generic base class '
+            f'(i.e., "typing.IO", "typing.BinaryIO", or "typing.TextIO").'
+        )
+    # Else, this object is *NOT* a PEP 484-compliant "typing" IO generic.
+
+    # PEP 544-compliant IO protocol implementing this PEP 484-compliant IO
+    # generic if any *OR* "None" otherwise.
+    pep544_protocol = HINT_PEP484_IO_GENERIC_TO_PEP544_PROTOCOL.get(hint)
+
+    # If *NO* PEP 544-compliant IO protocol implements this generic...
+    if pep544_protocol is None:
+        # Tuple of zero or more type variables parametrizing this hint.
+        hint_typevars = get_hint_pep_typeargs_packed(hint)
+
+        #FIXME: Unit test us up, please.
+        # If this hint is unparametrized, raise an exception.
+        if not hint_typevars:
+            raise BeartypeDecorHintPep544Exception(
+                f'{exception_prefix}PEP 484 IO generic base class '
+                f'{repr(hint)} invalid (i.e., not subscripted (indexed) by '
+                f'either "str", "bytes", "typing.Any", or "typing.AnyStr").'
+            )
+        # Else, this hint is parametrized and thus defines the "__origin__"
+        # dunder attribute whose value is the type originating this hint.
+
+        #FIXME: Attempt to actually handle this type variable, please.
+        # Reduce this parametrized hint (e.g., "typing.IO[typing.AnyStr]") to
+        # the equivalent unparametrized hint (e.g., "typing.IO"), effectively
+        # ignoring the type variable parametrizing this hint.
+        hint_unparametrized: type = get_hint_pep_origin_or_none(hint)  # type: ignore[assignment]
+
+        # PEP 544-compliant IO protocol implementing this unparametrized PEP
+        # 484-compliant IO generic. For efficiency, we additionally cache this
+        # mapping under the original parametrized hint to minimize the cost of
+        # similar reductions under subsequent annotations.
+        pep544_protocol = \
+            HINT_PEP484_IO_GENERIC_TO_PEP544_PROTOCOL[hint] = \
+            HINT_PEP484_IO_GENERIC_TO_PEP544_PROTOCOL[hint_unparametrized]
+    # Else, some PEP 544-compliant IO protocol implements this generic.
+
+    # Return this protocol.
+    return pep544_protocol

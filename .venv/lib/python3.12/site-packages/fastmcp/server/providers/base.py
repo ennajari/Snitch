@@ -1,0 +1,838 @@
+"""Base Provider class for dynamic MCP components.
+
+This module provides the `Provider` abstraction for providing tools,
+resources, and prompts dynamically at runtime.
+
+Example:
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.providers import Provider
+    from fastmcp.tools import Tool
+
+    class DatabaseProvider(Provider):
+        def __init__(self, db_url: str):
+            super().__init__()
+            self.db = Database(db_url)
+
+        async def _list_tools(self) -> list[Tool]:
+            rows = await self.db.fetch("SELECT * FROM tools")
+            return [self._make_tool(row) for row in rows]
+
+        async def _get_tool(self, name: str) -> Tool | None:
+            row = await self.db.fetchone("SELECT * FROM tools WHERE name = ?", name)
+            return self._make_tool(row) if row else None
+
+    mcp = FastMCP("Server", providers=[DatabaseProvider(db_url)])
+    ```
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from functools import partial
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
+
+from typing_extensions import Self
+
+from fastmcp.server.providers.addressing import (
+    is_app_tool_with_identity,
+    tool_identity,
+)
+from fastmcp.server.transforms.visibility import Visibility
+from fastmcp.utilities.async_utils import gather
+from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.versions import VersionSpec, version_sort_key
+
+if TYPE_CHECKING:
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
+    from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
+    from fastmcp.server.transforms import (
+        GetPromptNext,
+        GetResourceNext,
+        GetResourceTemplateNext,
+        GetToolNext,
+        Transform,
+    )
+    from fastmcp.tools.base import Tool
+
+
+_C = TypeVar("_C", bound=FastMCPComponent)
+
+
+def _listed(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    return after
+
+
+def _keep_hidden(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    listed = {c.key for c in after}
+    return [*after, *(c for c in before if c.key not in listed)]
+
+
+class Provider:
+    """Base class for dynamic component providers.
+
+    Subclass and override whichever methods you need. Default implementations
+    return empty lists / None, so you only need to implement what your provider
+    supports.
+
+    Provider semantics:
+        - Return `None` from `get_*` methods to indicate "I don't have it" (search continues)
+        - Static components (registered via decorators) always take precedence over providers
+        - Providers are queried in registration order; first non-None wins
+        - Components execute themselves via run()/read()/render() - providers just source them
+
+    Error handling:
+        - `list_*` methods: Errors are logged and the provider returns empty (graceful degradation).
+          This allows other providers to still contribute their components.
+    """
+
+    def __init__(self) -> None:
+        self._transforms: list[Transform] = []
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Extensions bundled with this provider.
+
+        FastMCP automatically registers a separate instance of each extension
+        on the receiving server. Bundled extensions must opt in with
+        `auto_register = True`. An explicitly registered extension with the
+        same identifier takes precedence, regardless of registration order.
+        Composite providers should include their children's extensions.
+        """
+        return ()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        """Track a serving root independently of resource lifespan ownership.
+
+        Composite providers forward this scope to their children so live
+        composition can validate every runtime that will expose new components.
+        """
+        yield
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+
+    @property
+    def transforms(self) -> list[Transform]:
+        """All transforms applied to components from this provider."""
+        return list(self._transforms)
+
+    def add_transform(self, transform: Transform) -> None:
+        """Add a transform to this provider.
+
+        Transforms modify components (tools, resources, prompts) as they flow
+        through the provider. They're applied in order - first added is innermost.
+
+        Args:
+            transform: The transform to add.
+
+        Example:
+            ```python
+            from fastmcp.server.transforms import Namespace
+
+            provider = MyProvider()
+            provider.add_transform(Namespace("api"))
+            # Tools become "api_toolname"
+            ```
+        """
+        self._transforms.append(transform)
+
+    def wrap_transform(self, transform: Transform) -> Provider:
+        """Return a new provider with this transform applied (immutable).
+
+        Unlike add_transform() which mutates this provider, wrap_transform()
+        returns a new provider that wraps this one. The original provider
+        is unchanged.
+
+        This is useful when you want to apply transforms without side effects,
+        such as adding the same provider to multiple aggregators with different
+        namespaces.
+
+        Args:
+            transform: The transform to apply.
+
+        Returns:
+            A new provider that wraps this one with the transform applied.
+
+        Example:
+            ```python
+            from fastmcp.server.transforms import Namespace
+
+            provider = MyProvider()
+            namespaced = provider.wrap_transform(Namespace("api"))
+            # provider is unchanged
+            # namespaced returns tools as "api_toolname"
+            ```
+        """
+        # Import here to avoid circular imports
+        from fastmcp.server.providers.wrapped_provider import _WrappedProvider
+
+        return _WrappedProvider(self, transform)
+
+    # -------------------------------------------------------------------------
+    # Internal transform chain building
+    # -------------------------------------------------------------------------
+
+    async def list_tools(self) -> Sequence[Tool]:
+        """List tools with all transforms applied.
+
+        Applies transforms sequentially: base → transforms (in order).
+        Each transform receives the result from the previous transform.
+        Components may be marked as disabled but are NOT filtered here -
+        filtering happens at the server level to allow session transforms to override.
+
+        Returns:
+            Transformed sequence of tools (including disabled ones).
+        """
+        tools = await self._list_tools()
+        for transform in self.transforms:
+            tools = await transform.list_tools(tools)
+        return tools
+
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Get tool by transformed name with all transforms applied.
+
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete,
+        allowing session-level transforms to override provider-level disables.
+
+        Args:
+            name: The transformed tool name to look up.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The tool if found (may be marked disabled), None if not found.
+        """
+
+        async def base(n: str, *, version: VersionSpec | None = None) -> Tool | None:
+            found = hashed_lookup_target(self)
+            if found is None or n != found.name:
+                return await self._get_tool(n, version)
+            if version is None or version.matches(found.version):
+                return await self._check_hashed_target(found)
+            other = await self._get_tool(n, version)
+            if other is not None and tool_identity(other) == tool_identity(found):
+                return other
+            return None
+
+        chain: GetToolNext = cast("GetToolNext", base)
+        for transform in self.transforms:
+            chain = cast(
+                "GetToolNext",
+                partial(cast(Any, transform.get_tool), call_next=chain),
+            )
+
+        return await chain(name, version=version)
+
+    async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by original name, bypassing transforms.
+
+        Searches for a tool named ``tool_name`` tagged with the given app
+        name.  Skips the transform chain entirely.
+
+        Returns:
+            The tool if found and tagged with the given app name, else None.
+        """
+        tool = await self._get_tool(tool_name)
+        if tool is not None:
+            meta = tool.meta or {}
+            fastmcp_meta = meta.get("fastmcp")
+            ui_meta = meta.get("ui")
+            # Must match app name AND have app visibility (not model-only)
+            visibility = (
+                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
+            )
+            if (
+                isinstance(fastmcp_meta, dict)
+                and fastmcp_meta.get("app") == app_name
+                and "app" in visibility
+            ):
+                return tool
+        return None
+
+    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Get an app-visible tool by its identity hash, through `get_tool()`.
+
+        The identity hash survives renaming, so `_get_tool_by_hash()` finds
+        the tool beneath this provider's transforms. Its name above the
+        transforms comes from their listing, and the tool is then looked up
+        under that name with `get_tool()`, the same public lookup a name call
+        uses. While that lookup runs, the bottom of the chain answers the
+        found tool for its own name and looks up every other name as usual,
+        so transforms and `get_tool()` overrides decide exactly as they would
+        for a name call, while a different tool sharing the name cannot take
+        the found tool's place. A version constraint the found tool does not
+        meet is looked up as usual and accepted only for the same identity.
+        A nested lookup of that same name on this provider while the hashed
+        lookup runs resolves to the found tool; tasks started during the
+        lookup resolve names as usual once it finishes.
+
+        Note: Like `get_tool()`, this does NOT filter disabled components. The
+        Server (FastMCP) performs enabled filtering after all transforms.
+
+        Args:
+            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_name: The local tool name from the same name.
+
+        Returns:
+            The tool if found and not hidden (may be marked disabled), else None.
+        """
+        found = await self._get_tool_by_hash(tool_hash, tool_name)
+        if found is None:
+            return None
+        name = (
+            await _listed_name(self.transforms, found, await self._list_tools())
+            if self.transforms
+            else found.name
+        )
+        if name is None:
+            return None
+
+        state = _HashedLookup(provider=self, tool=found)
+        token = _hashed_lookup.set(state)
+        try:
+            tool = await self.get_tool(name)
+        finally:
+            state.active = False
+            _hashed_lookup.reset(token)
+
+        if tool is None or tool_identity(tool) != tool_hash:
+            return None
+        return tool
+
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Apply this provider's own checks to the tool a hashed lookup found.
+
+        During `get_tool_by_hash()` the bottom of the `get_tool()` chain
+        answers the found tool in place of `_get_tool()`. A provider whose
+        `_get_tool()` checks the tool it returns, as the server does for auth,
+        overrides this to make the same check, so the found tool is checked
+        before any transform runs, as a name lookup checks it. The default
+        accepts the tool.
+        """
+        return tool
+
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by its identity hash, before transforms.
+
+        Matches on ``meta["fastmcp"]["tool_hash"]`` and requires ``"app"`` in
+        the tool's visibility. The default looks the tool up by its local name
+        via `_get_tool()`. Providers whose tools can be renamed beneath them
+        override this to search by identity instead.
+        """
+        tool = await self._get_tool(tool_name)
+        if tool is not None and is_app_tool_with_identity(tool, tool_hash):
+            return tool
+        return None
+
+    async def list_resources(self) -> Sequence[Resource]:
+        """List resources with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
+        resources = await self._list_resources()
+        for transform in self.transforms:
+            resources = await transform.list_resources(resources)
+        return resources
+
+    async def get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get resource by transformed URI with all transforms applied.
+
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
+        Args:
+            uri: The transformed resource URI to look up.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The resource if found (may be marked disabled), None if not found.
+        """
+
+        async def base(
+            u: str, *, version: VersionSpec | None = None
+        ) -> Resource | None:
+            return await self._get_resource(u, version)
+
+        chain: GetResourceNext = cast("GetResourceNext", base)
+        for transform in self.transforms:
+            chain = cast(
+                "GetResourceNext",
+                partial(cast(Any, transform.get_resource), call_next=chain),
+            )
+
+        return await chain(uri, version=version)
+
+    async def list_resource_templates(self) -> Sequence[ResourceTemplate]:
+        """List resource templates with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
+        templates = await self._list_resource_templates()
+        for transform in self.transforms:
+            templates = await transform.list_resource_templates(templates)
+        return templates
+
+    async def get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get resource template by transformed URI with all transforms applied.
+
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
+        Args:
+            uri: The transformed template URI to look up.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The template if found (may be marked disabled), None if not found.
+        """
+
+        async def base(
+            u: str, *, version: VersionSpec | None = None
+        ) -> ResourceTemplate | None:
+            return await self._get_resource_template(u, version)
+
+        chain: GetResourceTemplateNext = cast("GetResourceTemplateNext", base)
+        for transform in self.transforms:
+            chain = cast(
+                "GetResourceTemplateNext",
+                partial(
+                    cast(Any, transform.get_resource_template),
+                    call_next=chain,
+                ),
+            )
+
+        return await chain(uri, version=version)
+
+    async def list_prompts(self) -> Sequence[Prompt]:
+        """List prompts with all transforms applied.
+
+        Components may be marked as disabled but are NOT filtered here.
+        """
+        prompts = await self._list_prompts()
+        for transform in self.transforms:
+            prompts = await transform.list_prompts(prompts)
+        return prompts
+
+    async def get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get prompt by transformed name with all transforms applied.
+
+        Note: This method does NOT filter disabled components. The Server
+        (FastMCP) performs enabled filtering after all transforms complete.
+
+        Args:
+            name: The transformed prompt name to look up.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The prompt if found (may be marked disabled), None if not found.
+        """
+
+        async def base(n: str, *, version: VersionSpec | None = None) -> Prompt | None:
+            return await self._get_prompt(n, version)
+
+        chain: GetPromptNext = cast("GetPromptNext", base)
+        for transform in self.transforms:
+            chain = cast(
+                "GetPromptNext",
+                partial(cast(Any, transform.get_prompt), call_next=chain),
+            )
+
+        return await chain(name, version=version)
+
+    # -------------------------------------------------------------------------
+    # Private list/get methods (override these to provide components)
+    # -------------------------------------------------------------------------
+
+    async def _list_tools(self) -> Sequence[Tool]:
+        """Return all available tools.
+
+        Override to provide tools dynamically. Returns ALL versions of all tools.
+        The server handles deduplication to show one tool per name.
+        """
+        return []
+
+    async def _get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Get a specific tool by name.
+
+        Default implementation filters _list_tools() and picks the highest version
+        that matches the spec.
+
+        Args:
+            name: The tool name.
+            version: Optional version filter. If None, returns highest version.
+                     If specified, returns highest version matching the spec.
+
+        Returns:
+            The Tool if found, or None to continue searching other providers.
+        """
+        tools = await self._list_tools()
+        matching = [t for t in tools if t.name == name]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)
+
+    async def _list_resources(self) -> Sequence[Resource]:
+        """Return all available resources.
+
+        Override to provide resources dynamically. Returns ALL versions of all resources.
+        The server handles deduplication to show one resource per URI.
+        """
+        return []
+
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        """Get a specific resource by URI.
+
+        Default implementation filters _list_resources() and returns highest
+        version matching the spec.
+
+        Args:
+            uri: The resource URI.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The Resource if found, or None to continue searching other providers.
+        """
+        resources = await self._list_resources()
+        matching = [r for r in resources if str(r.uri) == uri]
+        if version:
+            matching = [r for r in matching if version.matches(r.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)
+
+    async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
+        """Return all available resource templates.
+
+        Override to provide resource templates dynamically. Returns ALL versions.
+        The server handles deduplication.
+        """
+        return []
+
+    async def _get_resource_template(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> ResourceTemplate | None:
+        """Get a resource template that matches the given URI.
+
+        Default implementation lists all templates, finds those whose pattern
+        matches the URI, and returns the highest version matching the spec.
+
+        Args:
+            uri: The URI to match against templates.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The ResourceTemplate if a matching one is found, or None to continue searching.
+        """
+        templates = await self._list_resource_templates()
+        matching = [t for t in templates if t.matches(uri) is not None]
+        if version:
+            matching = [t for t in matching if version.matches(t.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)
+
+    async def _list_prompts(self) -> Sequence[Prompt]:
+        """Return all available prompts.
+
+        Override to provide prompts dynamically. Returns ALL versions of all prompts.
+        The server handles deduplication to show one prompt per name.
+        """
+        return []
+
+    async def _get_prompt(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Prompt | None:
+        """Get a specific prompt by name.
+
+        Default implementation filters _list_prompts() and picks the highest version
+        matching the spec.
+
+        Args:
+            name: The prompt name.
+            version: Optional version filter. If None, returns highest version.
+
+        Returns:
+            The Prompt if found, or None to continue searching other providers.
+        """
+        prompts = await self._list_prompts()
+        matching = [p for p in prompts if p.name == name]
+        if version:
+            matching = [p for p in matching if version.matches(p.version)]
+        if not matching:
+            return None
+        return max(matching, key=version_sort_key)
+
+    # -------------------------------------------------------------------------
+    # Task registration
+    # -------------------------------------------------------------------------
+
+    async def get_tasks(self) -> Sequence[FastMCPComponent]:
+        """Return components that should be registered as background tasks.
+
+        Override to customize which components are task-eligible.
+        Default calls list_* methods, applies provider transforms, and filters
+        for components with task_config.mode != 'forbidden'.
+
+        Used by the server during startup to register functions with Docket.
+        """
+        # Fetch all component types in parallel. Iterate the bound methods
+        # rather than a tuple of already-called coroutines: a parenthesized
+        # comma expression is a tuple, so it would create all four coroutines
+        # before `gather` starts, which is exactly what `gather` asks callers
+        # to avoid.
+        results = await gather(
+            fetch()
+            for fetch in (
+                self._list_tools,
+                self._list_resources,
+                self._list_resource_templates,
+                self._list_prompts,
+            )
+        )
+        components = [component for result in results for component in result]
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
+
+    async def _apply_task_transforms(
+        self, components: Sequence[FastMCPComponent]
+    ) -> list[FastMCPComponent]:
+        """Apply this provider's transforms to components bound for Docket.
+
+        Registration needs the names components are called by, so renaming
+        transforms apply. Catalog transforms (search, CodeMode) only replace
+        what is *listed*: the components they hide stay callable, so they are
+        kept alongside whatever the catalog transform returns.
+        """
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        tools: Sequence[Tool] = [c for c in components if isinstance(c, Tool)]
+        resources: Sequence[Resource] = [
+            c for c in components if isinstance(c, Resource)
+        ]
+        templates: Sequence[ResourceTemplate] = [
+            c for c in components if isinstance(c, ResourceTemplate)
+        ]
+        prompts: Sequence[Prompt] = [c for c in components if isinstance(c, Prompt)]
+
+        for transform in self.transforms:
+            keep = _keep_hidden if isinstance(transform, CatalogTransform) else _listed
+            tools = keep(tools, await transform.list_tools(tools))
+            resources = keep(resources, await transform.list_resources(resources))
+            templates = keep(
+                templates, await transform.list_resource_templates(templates)
+            )
+            prompts = keep(prompts, await transform.list_prompts(prompts))
+
+        return [*tools, *resources, *templates, *prompts]
+
+    # -------------------------------------------------------------------------
+    # Lifecycle methods
+    # -------------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        """User-overridable lifespan for custom setup and teardown.
+
+        Override this method to perform provider-specific initialization
+        like opening database connections, setting up external resources,
+        or other state management needed for the provider's lifetime.
+
+        The lifespan scope matches the server's lifespan - code before yield
+        runs at startup, code after yield runs at shutdown.
+
+        Example:
+            ```python
+            @asynccontextmanager
+            async def lifespan(self):
+                # Setup
+                self.db = await connect_database()
+                try:
+                    yield
+                finally:
+                    # Teardown
+                    await self.db.close()
+            ```
+        """
+        yield
+
+    # -------------------------------------------------------------------------
+    # Enable/Disable
+    # -------------------------------------------------------------------------
+
+    def enable(
+        self,
+        *,
+        names: set[str] | None = None,
+        keys: set[str] | None = None,
+        version: VersionSpec | None = None,
+        tags: set[str] | None = None,
+        components: set[Literal["tool", "resource", "template", "prompt"]]
+        | None = None,
+        only: bool = False,
+    ) -> Self:
+        """Enable components matching all specified criteria.
+
+        Adds a visibility transform that marks matching components as enabled.
+        Later transforms override earlier ones, so enable after disable makes
+        the component enabled.
+
+        With only=True, switches to allowlist mode - first disables everything,
+        then enables matching components.
+
+        Args:
+            names: Component names or URIs to enable.
+            keys: Component keys to enable (e.g., {"tool:my_tool@v1"}).
+            version: Component version spec to enable (e.g., VersionSpec(eq="v1") or
+                VersionSpec(gte="v2")). Unversioned components will not match.
+            tags: Enable components with these tags.
+            components: Component types to include (e.g., {"tool", "prompt"}).
+            only: If True, ONLY enable matching components (allowlist mode).
+
+        Returns:
+            Self for method chaining.
+        """
+        if only:
+            # Allowlist: disable everything, then enable matching
+            # The enable transform runs later on return path, so it overrides
+            self._transforms.append(Visibility(False, match_all=True))
+        self._transforms.append(
+            Visibility(
+                True,
+                names=names,
+                keys=keys,
+                version=version,
+                components=set(components) if components else None,
+                tags=set(tags) if tags else None,
+            )
+        )
+
+        return self
+
+    def disable(
+        self,
+        *,
+        names: set[str] | None = None,
+        keys: set[str] | None = None,
+        version: VersionSpec | None = None,
+        tags: set[str] | None = None,
+        components: set[Literal["tool", "resource", "template", "prompt"]]
+        | None = None,
+    ) -> Self:
+        """Disable components matching all specified criteria.
+
+        Adds a visibility transform that marks matching components as disabled.
+        Components can be re-enabled by calling enable() with matching criteria
+        (the later transform wins).
+
+        Args:
+            names: Component names or URIs to disable.
+            keys: Component keys to disable (e.g., {"tool:my_tool@v1"}).
+            version: Component version spec to disable (e.g., VersionSpec(eq="v1") or
+                VersionSpec(gte="v2")). Unversioned components will not match.
+            tags: Disable components with these tags.
+            components: Component types to include (e.g., {"tool", "prompt"}).
+
+        Returns:
+            Self for method chaining.
+        """
+        self._transforms.append(
+            Visibility(
+                False,
+                names=names,
+                keys=keys,
+                version=version,
+                components=set(components) if components else None,
+                tags=set(tags) if tags else None,
+            )
+        )
+        return self
+
+
+@dataclass
+class _HashedLookup:
+    """A running `get_tool_by_hash()` on one provider.
+
+    Tasks started during the lookup copy the context that holds this object,
+    so `active` is cleared when the lookup ends rather than relying on the
+    context variable being reset in every copy.
+    """
+
+    provider: Provider
+    tool: Tool
+    active: bool = True
+
+
+_hashed_lookup: ContextVar[_HashedLookup | None] = ContextVar(
+    "_hashed_lookup", default=None
+)
+
+
+def hashed_lookup_target(provider: Provider) -> Tool | None:
+    """The tool a running `get_tool_by_hash()` on `provider` found, if any."""
+    current = _hashed_lookup.get()
+    if current is None or not current.active or current.provider is not provider:
+        return None
+    return current.tool
+
+
+async def _listed_name(
+    transforms: Sequence[Transform], tool: Tool, catalog: Sequence[Tool]
+) -> str | None:
+    """The name `tool` is listed under after passing through `transforms`.
+
+    Each transform's listing gives the tool's name above it. A transform that
+    does not list the tool, such as a catalog transform that replaces the
+    listing, leaves the name unchanged, which is the name a lookup through it
+    would use. Returns None if a transform lists the identity under more
+    than one name.
+    """
+    identity = tool_identity(tool)
+    current = tool
+    for transform in transforms:
+        catalog = await transform.list_tools(catalog)
+        listed = [
+            t
+            for t in catalog
+            if tool_identity(t) == identity and t.version == tool.version
+        ]
+        if not listed:
+            listed = [
+                t
+                for t in await transform.list_tools([current])
+                if tool_identity(t) == identity and t.version == tool.version
+            ]
+        if len({t.name for t in listed}) > 1:
+            return None
+        if listed:
+            current = listed[0]
+    return current.name

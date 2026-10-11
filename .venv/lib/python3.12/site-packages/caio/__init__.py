@@ -1,0 +1,116 @@
+import os
+import warnings
+from importlib.metadata import Distribution
+
+from . import python_aio, python_aio_asyncio
+from .abstract import AbstractContext, AbstractOperation
+
+__version__ = Distribution.from_name("caio").version
+__author__ = "Dmitry Orlov <me@mosquito.su>"
+
+
+try:
+    from . import linux_uring, linux_uring_asyncio
+except ImportError:
+    linux_uring = None          # type: ignore
+    linux_uring_asyncio = None  # type: ignore
+
+try:
+    from . import linux_aio, linux_aio_asyncio
+except ImportError:
+    linux_aio = None            # type: ignore
+    linux_aio_asyncio = None    # type: ignore
+
+try:
+    from . import thread_aio, thread_aio_asyncio
+except ImportError:
+    thread_aio = None           # type: ignore
+    thread_aio_asyncio = None   # type: ignore
+
+
+variants = tuple(filter(None, [linux_uring, linux_aio, thread_aio, python_aio]))
+variants_asyncio = tuple(
+    filter(
+        None, [
+            linux_uring_asyncio,
+            linux_aio_asyncio,
+            thread_aio_asyncio,
+            python_aio_asyncio,
+        ],
+    ),
+)
+
+preferred = variants[0]
+preferred_asyncio = variants_asyncio[0]
+
+
+def __select_implementation():
+    global preferred
+    global preferred_asyncio
+
+    implementations = {
+        "uring": (linux_uring, linux_uring_asyncio),
+        "linux": (linux_aio, linux_aio_asyncio),
+        "thread": (thread_aio, thread_aio_asyncio),
+        "python": (python_aio, python_aio_asyncio),
+    }
+
+    implementations = {k: v for k, v in implementations.items() if all(v)}
+
+    default_implementation = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "default_implementation",
+    )
+
+    requested = os.getenv("CAIO_IMPL")
+
+    if not requested and os.path.isfile(default_implementation):
+        with open(default_implementation, "r") as fp:
+            for line in fp:
+                line = line.strip()
+                if line.startswith("#") or not line:
+                    continue
+                if line in implementations:
+                    requested = line
+                    break
+
+    elif requested and requested not in implementations:
+        warnings.warn(
+            f"CAIO_IMPL contains unsupported value {requested!r}. "
+            f"Use one of {tuple(implementations)!r}",
+            RuntimeWarning,
+        )
+        return
+
+    preferred, preferred_asyncio = implementations.get(
+        requested,
+        (preferred, preferred_asyncio),
+    )
+
+
+__select_implementation()
+
+
+Context = preferred.Context      # type: ignore
+Operation = preferred.Operation  # type: ignore
+AsyncioContext = preferred_asyncio.AsyncioContext   # type: ignore
+
+
+__all__ = (
+    "AbstractContext",
+    "AbstractOperation",
+    "AsyncioContext",
+    "Context",
+    "Operation",
+    "__author__",
+    "__version__",
+    "linux_aio",
+    "linux_aio_asyncio",
+    "linux_uring",
+    "linux_uring_asyncio",
+    "python_aio",
+    "python_aio_asyncio",
+    "thread_aio",
+    "thread_aio_asyncio",
+    "variants",
+    "variants_asyncio",
+)

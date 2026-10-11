@@ -1,0 +1,413 @@
+"""Base class for search transforms.
+
+Search transforms replace ``list_tools()`` output with a small set of
+synthetic tools — a search tool and a call-tool proxy — so LLMs can
+discover tools on demand instead of receiving the full catalog.
+
+All concrete search transforms (``RegexSearchTransform``,
+``BM25SearchTransform``, etc.) inherit from ``BaseSearchTransform`` and
+implement ``_make_search_tool()`` and ``_search()`` to provide their
+specific search strategy.
+
+Example::
+
+    from fastmcp import FastMCP
+    from fastmcp.server.transforms.search import RegexSearchTransform
+
+    mcp = FastMCP("Server")
+
+    @mcp.tool
+    def add(a: int, b: int) -> int: ...
+
+    @mcp.tool
+    def multiply(x: float, y: float) -> float: ...
+
+    # Clients now see only ``search_tools`` and ``call_tool``.
+    # The original tools are discoverable via search.
+    mcp.add_transform(RegexSearchTransform())
+"""
+
+import json
+from abc import abstractmethod
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Annotated, Any
+
+from fastmcp.exceptions import NotFoundError
+from fastmcp.server.context import Context
+from fastmcp.server.transforms import GetToolNext
+from fastmcp.server.transforms.catalog import CatalogTransform
+from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
+
+
+def _extract_searchable_text(tool: Tool) -> str:
+    """Combine tool name, description, and parameter info into searchable text."""
+    parts = [tool.name]
+    if tool.description:
+        parts.append(tool.description)
+
+    schema = tool.parameters
+    if schema:
+        properties = schema.get("properties", {})
+        for param_name, param_info in properties.items():
+            parts.append(param_name)
+            if isinstance(param_info, dict):
+                desc = param_info.get("description", "")
+                if desc:
+                    parts.append(desc)
+
+    return " ".join(parts)
+
+
+def serialize_tools_for_output_json(tools: Sequence[Tool]) -> list[dict[str, Any]]:
+    """Serialize tools to the same dict format as ``list_tools`` output."""
+    return [
+        tool.to_mcp_tool().model_dump(mode="json", by_alias=True, exclude_none=True)
+        for tool in tools
+    ]
+
+
+SearchResultSerializer = Callable[[Sequence[Tool]], Any | Awaitable[Any]]
+
+
+async def _invoke_serializer(
+    serializer: SearchResultSerializer, tools: Sequence[Tool]
+) -> Any:
+    """Call a serializer and await the result if it returns a coroutine."""
+    result = serializer(tools)
+    if isinstance(result, Awaitable):
+        return await result
+    return result
+
+
+def _union_type(branches: list[Any]) -> str:
+    branch_types = list(dict.fromkeys(_schema_type(b) for b in branches))
+    if "null" not in branch_types:
+        return " | ".join(branch_types) if branch_types else "any"
+    non_null = [b for b in branch_types if b != "null"]
+    if not non_null:
+        return "null"
+    return f"{' | '.join(non_null)}?"
+
+
+def _schema_type(schema: Any) -> str:
+    # Intentionally heuristic: the goal is a concise readable label, not a
+    # complete type system. Malformed schemas (e.g. {"type": ""}) → "any".
+    if not isinstance(schema, dict):
+        return "any"
+    t = schema.get("type")
+    if isinstance(t, str) and t:
+        if t == "array":
+            return f"{_schema_type(schema.get('items'))}[]"
+        if t == "null":
+            return "null"
+        return t
+    if "$ref" in schema:
+        return "object"
+    if "anyOf" in schema:
+        return _union_type(schema["anyOf"])
+    if "oneOf" in schema:
+        return _union_type(schema["oneOf"])
+    if "allOf" in schema:
+        # allOf = intersection / Pydantic composed model → always an object
+        return "object"
+    return "object" if "properties" in schema else "any"
+
+
+_NESTED_FIELD_LIMIT = 16
+
+
+def _resolve_ref(schema: Any, defs: dict[str, Any]) -> Any:
+    """Follow one local `$ref` (`#/$defs/Name`) into `defs`; otherwise return as-is."""
+    if isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        ref = schema["$ref"]
+        prefix = "#/$defs/"
+        if ref.startswith(prefix):
+            return defs.get(ref[len(prefix) :], schema)
+    return schema
+
+
+def _object_fields(schema: Any, defs: dict[str, Any]) -> list[str] | None:
+    """Field names of the object a schema describes, one level deep, or None.
+
+    Looks through a local `$ref`, an array's `items`, every object branch
+    of an `anyOf`/`oneOf` union, and every part of an `allOf`
+    composition, so `list[Model]`, `Model | None`, `A | B` and an
+    OpenAPI `allOf: [{$ref}, {properties}]` all yield the fields a caller
+    may see. Pydantic emits every model as a `$ref` into `$defs`, so
+    without this step a typed return renders as `object[]` and the caller
+    has to fetch once just to learn the field names.
+    """
+    # Visit each resolved node once across the whole walk, so shared union
+    # branches and recursive aliases cannot repeatedly expand the same graph.
+    seen: set[int] = set()
+    fields: dict[str, None] = {}
+    pending: list[tuple[Any, bool]] = [(schema, False)]
+    while pending:
+        node, expanded = pending.pop()
+        if expanded:
+            props = node.get("properties")
+            if isinstance(props, dict):
+                fields.update(dict.fromkeys(props))
+            continue
+
+        node = _resolve_ref(node, defs)
+        if not isinstance(node, dict) or id(node) in seen:
+            continue
+        seen.add(id(node))
+        if node.get("type") == "array":
+            pending.append((node.get("items"), False))
+            continue
+
+        # Properties follow union branches, preserving the existing field order.
+        pending.append((node, True))
+        for key in ("allOf", "oneOf", "anyOf"):
+            branches = node.get(key)
+            if isinstance(branches, list):
+                pending.extend((branch, False) for branch in reversed(branches))
+
+    return list(fields) or None
+
+
+def _nested_fields(field: Any, defs: dict[str, Any]) -> str:
+    """Suffix listing an object-valued field's own field names, or empty.
+
+    Names only: the level below is what turns `items (object[])` into
+    something a caller can index, and names cost a fraction of what types or
+    descriptions would. On a 51-tool SDK catalog where 44 tools return typed
+    pages, this adds ~35% to a detailed render of the whole catalog; a typical
+    `get_schema` call covers two or three tools. Long objects are truncated
+    with a count.
+    """
+    fields = _object_fields(field, defs)
+    if not fields:
+        return ""
+    shown = fields[:_NESTED_FIELD_LIMIT]
+    rest = len(fields) - len(shown)
+    tail = f", +{rest} more" if rest > 0 else ""
+    return ": " + ", ".join(f"`{name}`" for name in shown) + tail
+
+
+def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:
+    lines = [f"**{title}**"]
+    if not isinstance(schema, dict):
+        lines.append("- `value` (any)")
+        return lines
+
+    props = schema.get("properties")
+    raw_required = schema.get("required")
+    req = set(raw_required) if isinstance(raw_required, list) else set()
+    if props is None:
+        # Not a properties-based schema — treat as a single unnamed value.
+        lines.append(f"- `value` ({_schema_type(schema)})")
+        return lines
+    if not props:
+        # Object schema with no properties — zero-argument tool.
+        lines.append("*(no parameters)*")
+        return lines
+
+    raw_defs = schema.get("$defs")
+    defs = raw_defs if isinstance(raw_defs, dict) else {}
+    for name, field in props.items():
+        rendered = _render_param(name, field, required=name in req)
+        lines.append(f"- {rendered}{_nested_fields(field, defs)}")
+    return lines
+
+
+def _enum_values(schema: Any) -> list[Any] | None:
+    if not isinstance(schema, dict):
+        return None
+    if "const" in schema:
+        return [schema["const"]]
+    enum = schema.get("enum")
+    return enum if isinstance(enum, list) else None
+
+
+def _union_enum_values(variants: Any) -> list[Any] | None:
+    """Enum values of a union, only when every non-null branch is enumerated.
+
+    A union such as `Literal["a"] | int` has no closed set of valid values, so
+    listing "a" alone would contradict the rendered type.
+    """
+    if not isinstance(variants, list):
+        return None
+    values: list[Any] = []
+    for variant in variants:
+        if isinstance(variant, dict) and variant.get("type") == "null":
+            continue
+        branch = _enum_values(variant)
+        if branch is None:
+            return None
+        values.extend(v for v in branch if v not in values)
+    return values or None
+
+
+def _dump(value: Any) -> str:
+    """JSON for a schema value, which may hold non-JSON objects such as the
+    `datetime.date` that YAML produces for an unquoted `2024-01-01`."""
+    return json.dumps(value, default=str)
+
+
+def _render_param(name: str, field: Any, *, required: bool) -> str:
+    """One compact line per parameter: type, enum values, default.
+
+    Enums and defaults are what let a caller construct a valid value without a
+    round of guess-and-check, and they are cheap — on real catalogs they cost
+    ~40% more than bare types, where also inlining each parameter's description
+    costs ~300%. Descriptions stay in the `full` detail level, which emits the
+    raw JSON schema that already carries them.
+    """
+    qualifiers = [_schema_type(field)]
+    if isinstance(field, dict):
+        enum = _enum_values(field)
+        if enum is None and "anyOf" in field:
+            enum = _union_enum_values(field["anyOf"])
+        if isinstance(enum, list) and 0 < len(enum) <= 8:
+            qualifiers.append("one of " + "/".join(_dump(v) for v in enum))
+        if field.get("default") is not None:
+            qualifiers.append(f"default {_dump(field['default'])}")
+    if required:
+        qualifiers.append("required")
+
+    return f"`{name}` ({', '.join(qualifiers)})"
+
+
+def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
+    """Serialize tools to compact markdown, using ~65-70% fewer tokens than JSON."""
+    if not tools:
+        return "No tools matched the query."
+    blocks: list[str] = []
+    for tool in tools:
+        lines = [f"### {tool.name}"]
+        if tool.description:
+            lines.extend(["", tool.description.strip()])
+        lines.extend(["", *_schema_section(tool.parameters, "Parameters")])
+        if tool.output_schema is not None:
+            lines.extend(["", *_schema_section(tool.output_schema, "Returns")])
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+class BaseSearchTransform(CatalogTransform):
+    """Replace the tool listing with a search interface.
+
+    When this transform is active, ``list_tools()`` returns only:
+
+    * Any tools listed in ``always_visible`` (pinned).
+    * A **search tool** that finds tools matching a query.
+    * A **call_tool** proxy that executes tools discovered via search.
+
+    Hidden tools remain callable — ``get_tool()`` delegates unknown
+    names downstream, so direct calls and the call-tool proxy both work.
+
+    Search results respect the full auth pipeline: middleware, visibility
+    transforms, and component-level auth checks all apply.
+
+    Args:
+        max_results: Maximum number of tools returned per search.
+        always_visible: Tool names that stay in the ``list_tools``
+            output alongside the synthetic search/call tools.
+        search_tool_name: Name of the generated search tool.
+        call_tool_name: Name of the generated call-tool proxy.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_results: int = 5,
+        always_visible: list[str] | None = None,
+        search_tool_name: str = "search_tools",
+        call_tool_name: str = "call_tool",
+        search_result_serializer: SearchResultSerializer | None = None,
+    ) -> None:
+        super().__init__()
+        self._max_results = max_results
+        self._always_visible = set(always_visible or [])
+        self._search_tool_name = search_tool_name
+        self._call_tool_name = call_tool_name
+        self._search_result_serializer: SearchResultSerializer = (
+            search_result_serializer or serialize_tools_for_output_json
+        )
+
+    # ------------------------------------------------------------------
+    # Transform interface
+    # ------------------------------------------------------------------
+
+    async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        """Replace the catalog with pinned + synthetic search/call tools."""
+        pinned = [t for t in tools if t.name in self._always_visible]
+        return [*pinned, self._make_search_tool(), self._make_call_tool()]
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        """Intercept synthetic tool names; delegate everything else."""
+        if name == self._search_tool_name:
+            return self._make_search_tool()
+        if name == self._call_tool_name:
+            return self._make_call_tool()
+        return await call_next(name, version=version)
+
+    # ------------------------------------------------------------------
+    # Synthetic tools
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _make_search_tool(self) -> Tool:
+        """Create the search tool. Subclasses define the parameter schema."""
+        ...
+
+    def _make_call_tool(self) -> Tool:
+        """Create the call_tool proxy that executes discovered tools."""
+        transform = self
+
+        async def call_tool(
+            name: Annotated[str, "The name of the tool to call"],
+            arguments: Annotated[
+                dict[str, Any] | None, "Arguments to pass to the tool"
+            ] = None,
+            ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
+        ) -> ToolResult:
+            """Call a tool by name with the given arguments.
+
+            Use this to execute tools discovered via search_tools.
+            """
+            if name in {transform._call_tool_name, transform._search_tool_name}:
+                raise ValueError(
+                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
+                )
+            # The name comes from the model, so this proxy is a second way
+            # into the server that no host mediates. It may reach only what
+            # the model was allowed to discover.
+            if not any(
+                tool.name == name for tool in await transform.get_tool_catalog(ctx)
+            ):
+                raise NotFoundError(f"Unknown tool: {name!r}")
+            return await ctx.fastmcp.call_tool(name, arguments)
+
+        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    async def _render_results(self, tools: Sequence[Tool]) -> Any:
+        return await _invoke_serializer(self._search_result_serializer, tools)
+
+    # ------------------------------------------------------------------
+    # Catalog access
+    # ------------------------------------------------------------------
+
+    async def _get_visible_tools(self, ctx: Context) -> Sequence[Tool]:
+        """Get the auth-filtered tool catalog, excluding pinned tools."""
+        tools = await self.get_tool_catalog(ctx)
+        return [t for t in tools if t.name not in self._always_visible]
+
+    # ------------------------------------------------------------------
+    # Abstract search
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
+        """Search the given tools and return matches."""
+        ...
