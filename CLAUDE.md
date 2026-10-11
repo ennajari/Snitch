@@ -27,6 +27,15 @@ Build in this order, each with tests before moving on:
 NOT in this phase: Claude Code plugin hooks, MCP server, mutation testing, LLM judge,
 TypeScript, GitHub App, benchmark, website. Do not start them.
 
+## Progress
+- [x] 1. inventory — deleted, renamed-away, newly skipped tests (6 fixtures, all passing)
+      Not yet: xfail markers, pytest.skip() inside a test body, edited parametrize values.
+- [ ] 2. astdiff  ← current
+- [ ] 3. rules
+- [ ] 4. ledger
+- [ ] 5. receipt
+- [ ] 6. CLI commands
+
 ## Core data model (keep exactly; Pydantic v2)
 ```python
 class SnitchEvent(BaseModel):
@@ -44,6 +53,14 @@ class SnitchEvent(BaseModel):
     escalated: bool = False
     created_at: datetime
 ```
+
+## Decisions already made (do not change without asking)
+- Build backend: uv_build, flat `engine/` package; console script `snitch = "engine.cli:app"`.
+- pytest ignores `tests/fixtures` (norecursedirs); ruff excludes `tests/fixtures` and `*.md`.
+- Fixture tests copy before/ and after/ into tmp_path before running.
+- Event ids are a stable hash of (session_id, pattern, node id) so re-runs dedupe.
+- Known limitation: collection runs the target repo's conftest.py with Snitch's own
+  interpreter; a repo with missing dependencies raises InventoryError.
 
 ## Stack and commands
 - Python 3.12, managed with **uv** (`uv add`, `uv run`). Never use pip directly.
@@ -63,7 +80,10 @@ class SnitchEvent(BaseModel):
 - Never edit, weaken, skip or delete a test to make it pass. If a test looks wrong,
   stop and tell me why — this project exists to catch exactly that.
 - Never claim tests pass without running them in the same turn; paste the summary line.
-- Small commits with clear messages (`feat(astdiff): detect weakened equality asserts`).
+- Never run git commit or git push. Stage nothing. I review and commit myself.
+  At the end of a task, propose commit messages (Conventional Commits) for me to use.
+- Never add a Co-Authored-By trailer or any mention of Claude/AI in commit messages,
+  PR titles or PR bodies.
 - Deterministic detectors only in the engine; no network calls, no LLM calls yet.
 - Ask before adding a dependency not listed above.
 - Keep detectors pure functions: `(before_repo, after_repo) -> list[SnitchEvent]`.
