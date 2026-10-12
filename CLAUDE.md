@@ -39,8 +39,10 @@ TypeScript, GitHub App, benchmark, website. Do not start them.
       (14 fixtures, all passing; totals 19 cheat / 14 legit)
       Not yet: nested config files, Makefile/shell CI surfaces, real YAML parsing.
       Rule event ids hash (session, pattern, file) — there is no test node id.
-- [ ] 4. ledger  ← current
-- [ ] 5. receipt
+- [x] 4. ledger — `Ledger(path)`: `record(events)` (INSERT OR IGNORE on id), `events(session_id)`;
+      one table, event stored as JSON (5 tests, all passing)
+      Not yet: updating judge_verdict / disclosed / escalated on a stored event.
+- [ ] 5. receipt  ← current
 - [ ] 6. CLI commands
 
 ## Core data model (keep exactly; Pydantic v2)
