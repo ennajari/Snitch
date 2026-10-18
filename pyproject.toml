@@ -5,6 +5,7 @@ description = "Integrity layer for AI coding agents: detects test cheating."
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.14.0",
+    "pytest>=9.1.1",
     "structlog>=26.1.0",
     "tree-sitter>=0.26.0",
     "tree-sitter-python>=0.25.0",
@@ -36,6 +37,5 @@ strict = true
 [dependency-groups]
 dev = [
     "mypy>=2.4.0",
-    "pytest>=9.1.1",
     "ruff>=0.17.0",
 ]
