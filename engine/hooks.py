@@ -33,8 +33,8 @@ def session_dir(data_dir: Path, session_id: object) -> Path:
     return data_dir / "sessions" / session_id
 
 
-def _toplevel(payload: dict[str, Any]) -> Path | None:
-    cwd = Path(str(payload.get("cwd") or "."))
+def toplevel(cwd: Path) -> Path | None:
+    """Root of the git work tree containing `cwd`, or None outside one."""
     top = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=cwd,
@@ -42,7 +42,7 @@ def _toplevel(payload: dict[str, Any]) -> Path | None:
         text=True,
         check=False,
     )
-    return Path(top.stdout.strip()) if top.returncode == 0 else None
+    return Path(top.stdout.strip()).resolve() if top.returncode == 0 else None
 
 
 def _listed(root: Path) -> list[str]:
@@ -82,11 +82,11 @@ def _fingerprint(root: Path, files: list[str]) -> str:
 def session_start(payload: dict[str, Any], data_dir: Path) -> None:
     """Snapshot the baseline once per session."""
     session = session_dir(data_dir, payload.get("session_id"))
-    root = _toplevel(payload)
+    root = toplevel(Path(str(payload.get("cwd") or ".")))
     if root is not None:
         session.mkdir(parents=True, exist_ok=True)
         # rewritten on resume too: its mtime marks the project's active session
-        (session / "project").write_text(str(root.resolve()))
+        (session / "project").write_text(str(root))
     baseline = session / "baseline"
     if baseline.exists():
         return  # resume / compact: the first baseline stays
@@ -105,13 +105,19 @@ def session_start(payload: dict[str, Any], data_dir: Path) -> None:
 
 
 def current_session(data_dir: Path, project: Path) -> str | None:
-    """The most recently started session on `project` (MCP servers get no session id)."""
+    """The most recently started session on the repo at `project` (its git root).
+
+    MCP servers get no session id, only the project dir.
+    """
     # shortcut: two Claude sessions open on the same project share the newest one;
     # revisit if Claude Code starts passing the session id to MCP servers.
+    root = toplevel(project)
+    if root is None:
+        return None
     marks = [
         p
         for p in (data_dir / "sessions").glob("*/project")
-        if p.read_text() == str(project.resolve())
+        if p.read_text() == str(root)
     ]
     newest = max(marks, key=lambda p: p.stat().st_mtime_ns, default=None)
     return newest.parent.name if newest else None
@@ -138,9 +144,14 @@ def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
     session = session_dir(data_dir, session_id)
     assert isinstance(session_id, str)  # validated by session_dir
     baseline = session / "baseline"
-    root = _toplevel(payload)
-    if not baseline.is_dir() or root is None:
+    root = toplevel(Path(str(payload.get("cwd") or ".")))
+    project = session / "project"
+    if not baseline.is_dir() or root is None or not project.is_file():
         return None
+    if project.read_text() != str(root):
+        return (
+            None  # cwd moved to another repo: its tree says nothing about this baseline
+        )
     files = _listed(root)
     fingerprint = _fingerprint(root, files)
     state = session / "fingerprint"
