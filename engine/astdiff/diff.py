@@ -13,6 +13,8 @@ PARSER = Parser(Language(tree_sitter_python.language()))
 LITERALS = {"integer", "float", "string", "true", "false", "none"}
 SKIP_CALLS = {"pytest.skip", "pytest.xfail", "skip", "xfail"}
 APPROX_CALLS = {"pytest.approx", "approx"}
+UNITTEST_EQUAL = {"self.assertEqual", "self.assertEquals"}
+UNITTEST_WEAK = {"self.assertIn", "self.assertIsNotNone"}
 # pytest.approx defaults, used when the `before` side gives no explicit tolerance
 APPROX_DEFAULTS = {"rel": 1e-6, "abs": 1e-12}
 
@@ -60,28 +62,68 @@ def _tests(root: Node, prefix: str) -> Iterator[tuple[str, Node]]:
             yield from _tests(body, f"{prefix}::{label}")
 
 
-def _asserts(fn: Node) -> list[Node]:
-    return [n for n in _walk(fn) if n.type == "assert_statement"]
+def _callee(node: Node) -> str:
+    """Dotted name of the function a call node calls; "" for any other node."""
+    function = node.child_by_field_name("function") if node.type == "call" else None
+    return _text(function) if function else ""
 
 
-def _skip_calls(fn: Node) -> list[Node]:
+def _positional(call: Node) -> list[Node]:
+    args = call.child_by_field_name("arguments")
     return [
-        n
-        for n in _walk(fn)
-        if n.type == "call"
-        and (callee := n.child_by_field_name("function")) is not None
-        and _text(callee) in SKIP_CALLS
+        a
+        for a in (args.named_children if args else [])
+        if a.type not in ("keyword_argument", "comment")
     ]
 
 
+def _asserts(fn: Node) -> list[Node]:
+    """`assert` statements and unittest `self.assert*(...)` calls."""
+    return [
+        n
+        for n in _walk(fn)
+        if n.type == "assert_statement" or _callee(n).startswith("self.assert")
+    ]
+
+
+def source_changed(before_repo: Path, after_repo: Path) -> bool:
+    """Whether any non-test .py file differs between the two repos."""
+
+    def sources(repo: Path) -> dict[str, bytes]:
+        return {
+            f: p.read_bytes()
+            for f, p in _py_files(repo).items()
+            if not _is_test_file(p)
+        }
+
+    # shortcut: repo-wide, any non-test .py counts as "the code under test";
+    # resolve the test file's imports if unrelated edits make this noisy.
+    return sources(before_repo) != sources(after_repo)
+
+
+def _skip_calls(fn: Node) -> list[Node]:
+    return [n for n in _walk(fn) if n.type == "call" and _callee(n) in SKIP_CALLS]
+
+
 def _guard(node: Node, fn: Node) -> Node | None:
-    """Outermost `if` / `try ... except` around `node` that can keep it from running."""
+    """Outermost `if` / `try ... except` / `with suppress(...)` that can skip `node`."""
     guard = None
     parent = node.parent
     while parent is not None and parent != fn:
-        if parent.type == "if_statement" or (
-            parent.type == "try_statement"
-            and any(c.type.startswith("except") for c in parent.children)
+        if (
+            parent.type == "if_statement"
+            or (
+                parent.type == "try_statement"
+                and any(c.type.startswith("except") for c in parent.children)
+            )
+            or (
+                parent.type == "with_statement"
+                and any(
+                    "suppress(" in _text(c)
+                    for c in parent.children
+                    if c.type == "with_clause"
+                )
+            )
         ):
             guard = parent
         parent = parent.parent
@@ -89,7 +131,11 @@ def _guard(node: Node, fn: Node) -> Node | None:
 
 
 def _equality(assertion: Node) -> list[Node] | None:
-    """The two operands of `assert a == b`, else None."""
+    """The two operands of `assert a == b` / `self.assertEqual(a, b)`, else None."""
+    if assertion.type == "call":
+        args = _positional(assertion)
+        equal = _callee(assertion) in UNITTEST_EQUAL and len(args) >= 2
+        return args[:2] if equal else None
     cond = assertion.named_children[0]
     if cond.type != "comparison_operator":
         return None
@@ -123,9 +169,15 @@ def _weakened(before: Node, after: Node) -> bool:
     operands = _equality(before)
     if operands is None:
         return False
+    texts = {_text(o) for o in operands}
+    if after.type == "call":
+        if _callee(after) == "self.assertTrue":
+            args = _positional(after)
+            return bool(args) and _text(args[0]) in texts
+        return _callee(after) in UNITTEST_WEAK
     cond = after.named_children[0]
     # truthy-only: `assert x == 5` became `assert x`
-    if _text(cond) in {_text(o) for o in operands}:
+    if _text(cond) in texts:
         return True
     if cond.type == "comparison_operator":
         operators = [o.type for o in cond.children_by_field_name("operators")]
@@ -187,12 +239,7 @@ def diff_ast(
     after_files = _py_files(after_repo)
     now = datetime.now(UTC)
 
-    def sources(files: dict[str, Path]) -> dict[str, bytes]:
-        return {f: p.read_bytes() for f, p in files.items() if not _is_test_file(p)}
-
-    # shortcut: repo-wide, any non-test .py counts as "the code under test";
-    # resolve the test file's imports if unrelated edits make this noisy.
-    source_changed = sources(before_files) != sources(after_files)
+    changed_source = source_changed(before_repo, after_repo)
 
     events: list[SnitchEvent] = []
     for file, after_path in after_files.items():
@@ -266,7 +313,7 @@ def diff_ast(
                 for b, a in changed
                 if (b, a) not in weakened and _literal_changed(b, a)
             ]
-            if relit and source_changed:
+            if relit and changed_source:
                 emit(
                     "expected_value_changed",
                     [b for b, _ in relit],

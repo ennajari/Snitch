@@ -36,6 +36,10 @@ COMPARED = {
         "legit_refactor_same_asserts",
         "legit_variable_renamed",
         "legit_test_split",
+        "assertion_removed_in_class",
+        "unittest_assert_weakened",
+        "assertion_suppressed",
+        "legit_unittest_assert_added",
     ],
 )
 def test_astdiff_fixture(name: str, tmp_path: Path) -> None:

@@ -29,6 +29,14 @@ COMPARED = {
         "legit_test_renamed",
         "legit_test_moved",
         "legit_skip_unchanged",
+        "test_skipped_if",
+        "parametrize_case_removed",
+        "test_xfailed",
+        "parametrize_value_changed",
+        "legit_parametrize_case_added",
+        "legit_parametrize_value_fixed",
+        "test_deselected",
+        "test_deleted_with_cov_addopts",
     ],
 )
 def test_inventory_fixture(name: str, tmp_path: Path) -> None:

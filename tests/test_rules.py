@@ -37,6 +37,10 @@ COMPARED = {
         "legit_ci_edit",
         "legit_env_var_read",
         "legit_narrow_except",
+        "addopts_changed_pyproject",
+        "coverage_lowered_setup_cfg",
+        "pytest_in_sys_modules",
+        "bare_except_pass",
     ],
 )
 def test_rules_fixture(name: str, tmp_path: Path) -> None:

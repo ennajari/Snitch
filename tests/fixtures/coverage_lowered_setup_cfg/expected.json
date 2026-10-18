@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "coverage_threshold_lowered",
+    "severity": "high",
+    "file": "setup.cfg",
+    "line_start": 2,
+    "line_end": 2,
+    "before": "90",
+    "after": "60",
+    "detector": "rule"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "parametrize_value_changed",
+    "severity": "medium",
+    "file": "test_calc.py",
+    "line_start": 6,
+    "line_end": 8,
+    "before": "test_calc.py::test_add[2-3-5]",
+    "after": "test_calc.py::test_add[2-3-6]",
+    "detector": "inventory"
+  }
+]
