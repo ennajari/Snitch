@@ -1,0 +1,6 @@
+#!/bin/sh
+# The engine CLI, on Claude's PATH while the plugin is enabled.
+# SNITCH_ENGINE overrides the source, e.g. a local checkout while developing.
+# shortcut: uvx installs the engine from the git repo on first run; switch to a
+# published package when the plugin is published.
+exec uvx --from "${SNITCH_ENGINE:-git+https://github.com/ennajari/snitch}" snitch "$@"

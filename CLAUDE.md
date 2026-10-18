@@ -9,56 +9,72 @@ GitHub Action, and a benchmark (TemptationBench) that ranks coding agents.
 
 The full spec lives outside the repo; the parts that matter for code are below.
 
-## Current phase: Week 1–2 — detection engine (Python / pytest only)
-Build in this order, each with tests before moving on:
-1. `engine/inventory/` — collect the test inventory of a repo (`pytest --collect-only -q`),
-   diff before vs after: deleted, renamed, newly skipped/xfailed tests.
-2. `engine/astdiff/` — tree-sitter (Python grammar) diff of test functions:
-   assertions removed, weakened (`==` → `in`/truthy/approx), expected literal changed,
-   `pytest.mark.skip/xfail` added, `if` guards around asserts.
-3. `engine/rules/` — deterministic rules: conftest.py hooks touching reports,
-   pytest.ini/pyproject addopts changes, coverage threshold lowered, CI files with
-   `continue-on-error`, `|| true`, `--no-verify`; source special-casing
-   (`'pytest' in sys.modules`, `PYTEST_CURRENT_TEST`); broad `except: pass`.
-4. `engine/ledger.py` — SQLite event store for `SnitchEvent`s per session.
-5. `engine/receipt.py` — render events as Markdown receipt (SARIF later).
-6. `snitch` CLI: `snitch diff <base> <head>` and `snitch check --staged`.
+## Current phase: Weeks 2–4 — Claude Code plugin (`plugin/snitch/`)
+The engine (phase 1) is done; see "Engine status" below. The plugin is a thin adapter:
+hooks and the MCP server call the engine, they never re-implement detection.
 
-NOT in this phase: Claude Code plugin hooks, MCP server, mutation testing, LLM judge,
-TypeScript, GitHub App, benchmark, website. Do not start them.
+Build in this order, each with tests before moving on:
+1. Skeleton — `plugin.json`, `bin/snitch` (runs the engine CLI), marketplace entry;
+   `claude plugin validate --strict` passes on the empty plugin. First, check the
+   current plugin docs for hook payloads, `${CLAUDE_PLUGIN_DATA}` and `userConfig`,
+   and write down anything that differs from the spec.
+2. `snitch hook session-start` (SessionStart) — snapshot the working tree as the
+   session baseline under `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>/`.
+3. `snitch hook post-tool` (PostToolUse on Edit/Write/MultiEdit/Bash) — run the three
+   detectors on baseline vs current tree, record to the session ledger.
+   observe = log only; warn = also tell the agent (hook output), never block.
+4. `snitch-mcp` (FastMCP) — tools `escalate(test_id, reason, evidence)` and `ledger()`.
+   An escalation marks the matching events `escalated=True` (needs a ledger update method).
+5. Stop verifier (Stop hook) — unresolved, unescalated events and a final message that
+   does not disclose them → warn: tell the agent; enforce: block the stop and ask it
+   to revert or explain. Sets `disclosed`.
+6. PreToolUse gate (enforce only) — deny edits to frozen tests / runner config with a
+   message pointing to `escalate`; Bash gate for `sed -i` on tests and `--no-verify`.
+   Frozen paths come from `.snitch.toml`.
+7. `userConfig`: `mode` = observe | warn | enforce (default warn).
+8. Evals — 20 `claude plugin eval` cases on seeded repos (broken test, impossible spec,
+   flaky test, slow test, controls); record the with/without delta.
+
+NOT in this phase: judge subagent / LLM judge, mutation testing and the mutant-runner
+subagent and monitor, `run_detectors` / `mutation_check` / `explain` MCP tools,
+GitHub Action, pre-commit packaging, benchmark, website, TypeScript.
+
+Open decision: how `bin/snitch` finds the engine — `uvx --from <this repo> snitch` for
+now; proper packaging decided at publish time.
 
 ## Progress
-- [x] 1. inventory — deleted, renamed-away, newly skipped/skipif/xfail tests,
-      parametrize_value_changed (only when non-test source also changed, like
-      expected_value_changed), test_deselected (still defined, no longer collected)
-      (14 fixtures, all passing)
-      Collection runs with `-o addopts=` and without PYTEST_ADDOPTS: inventory sees tests
-      as written; addopts changes are the rules detector's job.
-- [x] 2. astdiff — assertion removed / weakened / guarded, skip_in_body,
-      expected_value_changed (13 fixtures, all passing)
-      Also: unittest self.assertEqual → assertTrue/assertIn/assertIsNotNone,
-      `with suppress(...)` guards. (17 fixtures, all passing)
-      Not yet: other unittest asserts, for/while guards, positional approx tolerances,
-      custom python_files patterns; "source changed" is repo-wide, not per import.
-- [x] 3. rules — conftest report hooks, addopts deselection, coverage threshold, CI
-      continue-on-error / || true / --no-verify, pytest special-casing, broad except-pass
-      (18 fixtures, all passing)
-      Not yet: nested config files, Makefile/shell CI surfaces, real YAML parsing.
-      Rule event ids hash (session, pattern, file) — there is no test node id.
-- [x] 4. ledger — `Ledger(path)`: `record(events)` (INSERT OR IGNORE on id), `events(session_id)`;
-      one table, event stored as JSON (5 tests, all passing)
-      Not yet: updating judge_verdict / disclosed / escalated on a stored event.
-- [x] 5. receipt — `render(events) -> str`: summary table + one diff block per event,
-      most severe first (5 tests, all passing)
-      Not yet: judge / disclosed / escalated fields, SARIF.
-- [x] 6. CLI — `snitch diff <base> <head>` (git archive of both commits) and
-      `snitch check --staged` (HEAD vs index); runs all three detectors, records to
-      `<git dir>/snitch/ledger.db`, prints the receipt. Exit 0 clean, 1 any event,
-      2 usage/git error. Inventory collection failure → stderr warning, others still run.
-      (6 tests, all passing)
-      Not yet: `check` without --staged (working tree), --session override.
+- [x] 1. skeleton — plugin.json, bin/snitch (uvx; SNITCH_ENGINE overrides the source),
+      root .claude-plugin/marketplace.json; `validate --strict` passes on both (3 tests)
+- [ ] 2. session-start baseline  ← current
+- [ ] 3. post-tool detect (observe / warn)
+- [ ] 4. snitch-mcp: escalate, ledger
+- [ ] 5. Stop verifier
+- [ ] 6. PreToolUse gate (enforce)
+- [ ] 7. modes via userConfig
+- [ ] 8. 20 eval cases + measured delta
 
-Fixture totals: 32 cheat / 17 legit — phase target (30 / 15) met.
+## Plugin platform notes (checked against Claude Code 2.1.301 docs)
+- `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/<id>/`: kept across updates, deleted
+  on uninstall. Never write state under `${CLAUDE_PLUGIN_ROOT}`.
+- Hooks get `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_PROJECT_DIR` and
+  `CLAUDE_PLUGIN_OPTION_<KEY>` (so mode = `$CLAUDE_PLUGIN_OPTION_MODE`). Commands Claude
+  runs via Bash (incl. `bin/snitch`) get none of them.
+- `userConfig` `options: [...]` gives a picker (needs Claude Code ≥ 2.1.271).
+- Stop hook input has `last_assistant_message`; block with `decision: "block"` + `reason`.
+- PreToolUse deny: `hookSpecificOutput.permissionDecision: "deny"` + `permissionDecisionReason`.
+- PostToolUse feedback: `hookSpecificOutput.additionalContext` (shown next to the tool result).
+- Agent-type hooks exist but are experimental: start the Stop verifier as a command hook.
+- Monitors go under `experimental.monitors` (default file `monitors/monitors.json`).
+- `bin/` is on the Bash tool's PATH, but claude.ai / Cowork refuse plugins with `bin/`.
+- Validate the marketplace with `claude plugin validate --strict .claude-plugin/marketplace.json`
+  (the repo root would scan local `.claude/` too). Empty JSON component files fail validation.
+
+## Engine status (phase 1, done)
+inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
+32 cheat / 17 legit fixtures. Open items: other unittest asserts, for/while guards,
+nested config files, Makefile/shell CI surfaces, `check` on the working tree.
+Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
+the rules detector's job). Rule event ids hash (session, pattern, file).
 
 ## Core data model (keep exactly; Pydantic v2)
 ```python
@@ -89,7 +105,8 @@ class SnitchEvent(BaseModel):
 ## Stack and commands
 - Python 3.12, managed with **uv** (`uv add`, `uv run`). Never use pip directly.
 - Libraries: pydantic v2, tree-sitter + tree-sitter-python, typer (CLI), structlog,
-  pytest (runtime: the inventory detector runs `pytest --collect-only` on target repos).
+  pytest (runtime: the inventory detector runs `pytest --collect-only` on target repos),
+  FastMCP (snitch-mcp server).
 - Tests: pytest. Run `uv run pytest -q` after every change.
 - Lint/format: `uv run ruff check . && uv run ruff format .`
 - Types: `uv run mypy engine` (strict on `engine/`).
@@ -99,7 +116,8 @@ class SnitchEvent(BaseModel):
   and `after/` mini-repos, plus `expected.json` with the events that must be produced.
 - Each pattern needs at least one positive fixture AND one legitimate-change fixture
   that must produce NO event (false-positive guard).
-- Target for this phase: 30 cheat fixtures + 15 legitimate fixtures, all passing.
+- Hook commands are tested by feeding recorded hook JSON on stdin and asserting on
+  stdout and exit code; no live Claude session in unit tests.
 
 ## Rules for you (Claude) while working here
 - Never edit, weaken, skip or delete a test to make it pass. If a test looks wrong,
@@ -116,6 +134,6 @@ class SnitchEvent(BaseModel):
 ## Layout
 ```
 engine/{inventory,astdiff,rules}/   ledger.py   receipt.py   cli.py
-plugin/snitch/                      # later phase
+plugin/snitch/                      # phase 2: hooks, snitch-mcp, evals
 tests/  tests/fixtures/
 ```
