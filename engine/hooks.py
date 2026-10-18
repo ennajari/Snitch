@@ -1,10 +1,23 @@
-"""Claude Code hook handlers. Each takes the hook's JSON payload and the plugin data dir."""
+"""Claude Code hook handlers.
 
+Each takes the hook's JSON payload and the plugin data dir, and returns what to print on
+stdout for Claude Code (or None).
+"""
+
+import hashlib
+import json
+import os
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
+
+from engine.detect import run_detectors
+from engine.ledger import Ledger
+from engine.models import SnitchEvent
 
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
@@ -20,31 +33,7 @@ def session_dir(data_dir: Path, session_id: object) -> Path:
     return data_dir / "sessions" / session_id
 
 
-def snapshot(root: Path, dest: Path) -> None:
-    """Copy tracked and untracked, non-ignored files of the git work tree at `root`."""
-    listed = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-    ).stdout.decode()
-    # shortcut: copies every file on each new session; switch to hardlinks or
-    # content hashes if large repos make session start slow.
-    for rel in dict.fromkeys(filter(None, listed.split("\0"))):
-        src = root / rel
-        if not src.is_file() and not src.is_symlink():
-            continue  # tracked but deleted in the work tree
-        target = dest / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, target, follow_symlinks=False)
-
-
-def session_start(payload: dict[str, Any], data_dir: Path) -> str | None:
-    """Snapshot the baseline once per session; returns a note for stderr, if any."""
-    session = session_dir(data_dir, payload.get("session_id"))
-    baseline = session / "baseline"
-    if baseline.exists():
-        return None  # resume / compact: the first baseline stays
+def _toplevel(payload: dict[str, Any]) -> Path | None:
     cwd = Path(str(payload.get("cwd") or "."))
     top = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
@@ -53,11 +42,136 @@ def session_start(payload: dict[str, Any], data_dir: Path) -> str | None:
         text=True,
         check=False,
     )
-    if top.returncode != 0:
-        return f"snitch: {cwd} is not a git repository; no baseline taken"
+    return Path(top.stdout.strip()) if top.returncode == 0 else None
+
+
+def _listed(root: Path) -> list[str]:
+    """Tracked and untracked, non-ignored files of the git work tree at `root`."""
+    out = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    ).stdout.decode()
+    return [
+        rel
+        for rel in dict.fromkeys(filter(None, out.split("\0")))
+        # tracked but deleted in the work tree
+        if (root / rel).is_file() or (root / rel).is_symlink()
+    ]
+
+
+def snapshot(root: Path, dest: Path, files: list[str] | None = None) -> None:
+    # shortcut: copies every file each time; switch to hardlinks or content
+    # hashes if large repos make hooks slow.
+    for rel in _listed(root) if files is None else files:
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / rel, target, follow_symlinks=False)
+
+
+def _fingerprint(root: Path, files: list[str]) -> str:
+    """Changes whenever a file is added, removed, resized or rewritten."""
+    digest = hashlib.sha1()
+    for rel in files:
+        stat = (root / rel).lstat()
+        digest.update(f"{rel}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
+def session_start(payload: dict[str, Any], data_dir: Path) -> None:
+    """Snapshot the baseline once per session."""
+    session = session_dir(data_dir, payload.get("session_id"))
+    root = _toplevel(payload)
+    if root is not None:
+        session.mkdir(parents=True, exist_ok=True)
+        # rewritten on resume too: its mtime marks the project's active session
+        (session / "project").write_text(str(root.resolve()))
+    baseline = session / "baseline"
+    if baseline.exists():
+        return  # resume / compact: the first baseline stays
+    if root is None:
+        # stderr, not stdout: SessionStart stdout becomes Claude's context
+        print(
+            f"snitch: {payload.get('cwd')} is not a git repository; no baseline taken",
+            file=sys.stderr,
+        )
+        return
     partial = session / "baseline.partial"
     shutil.rmtree(partial, ignore_errors=True)
-    snapshot(Path(top.stdout.strip()), partial)
+    snapshot(root, partial)
     # rename last, so a crash mid-copy never leaves a half baseline behind
     partial.rename(baseline)
-    return None
+
+
+def current_session(data_dir: Path, project: Path) -> str | None:
+    """The most recently started session on `project` (MCP servers get no session id)."""
+    # shortcut: two Claude sessions open on the same project share the newest one;
+    # revisit if Claude Code starts passing the session id to MCP servers.
+    marks = [
+        p
+        for p in (data_dir / "sessions").glob("*/project")
+        if p.read_text() == str(project.resolve())
+    ]
+    newest = max(marks, key=lambda p: p.stat().st_mtime_ns, default=None)
+    return newest.parent.name if newest else None
+
+
+def _feedback(events: list[SnitchEvent]) -> str:
+    lines = [f"Snitch flagged {len(events)} new test-integrity event(s):"]
+    for e in events:
+        where = f"{e.file}:{e.line_start}"
+        if e.line_end != e.line_start:
+            where += f"-{e.line_end}"
+        lines.append(f"- [{e.severity}] {e.pattern} at {where}")
+    lines.append(
+        "If a test is wrong, do not weaken, skip or delete it: call the snitch "
+        "`escalate` tool with the test id and your reason instead. If this change was "
+        "intended, disclose it in your final message."
+    )
+    return "\n".join(lines)
+
+
+def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
+    """Detect against the baseline; in warn/enforce mode, tell the agent about new events."""
+    session_id = payload.get("session_id")
+    session = session_dir(data_dir, session_id)
+    assert isinstance(session_id, str)  # validated by session_dir
+    baseline = session / "baseline"
+    root = _toplevel(payload)
+    if not baseline.is_dir() or root is None:
+        return None
+    files = _listed(root)
+    fingerprint = _fingerprint(root, files)
+    state = session / "fingerprint"
+    if state.is_file() and state.read_text() == fingerprint:
+        return None  # nothing changed since the last run (most Bash calls)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        current = Path(tmp) / "current"
+        snapshot(root, current, files)
+        events, warnings = run_detectors(baseline, current, session_id)
+    for warning in warnings:
+        print(f"snitch: {warning}", file=sys.stderr)
+
+    ledger = Ledger(data_dir / "ledger.db")
+    try:
+        known = {e.id for e in ledger.events(session_id)}
+        ledger.record(events)
+        stored = ledger.events(session_id)  # with `escalated` filled in
+    finally:
+        ledger.close()
+    state.write_text(fingerprint)
+
+    new = [e for e in stored if e.id not in known and not e.escalated]
+    mode = os.environ.get("CLAUDE_PLUGIN_OPTION_MODE", "warn")
+    if not new or mode == "observe":
+        return None
+    return json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": _feedback(new),
+            }
+        }
+    )

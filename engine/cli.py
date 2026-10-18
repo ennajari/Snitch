@@ -5,19 +5,16 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
 from engine import hooks
-from engine.astdiff import diff_ast
-from engine.inventory import diff_inventory
-from engine.inventory.collect import InventoryError
+from engine.detect import run_detectors
 from engine.ledger import Ledger
-from engine.models import SnitchEvent
 from engine.receipt import render
-from engine.rules import diff_rules
 
 app = typer.Typer(help="Snitch: catches coding agents that cheat on tests.")
 hook_app = typer.Typer(help="Claude Code hook handlers (read the hook JSON on stdin).")
@@ -63,14 +60,9 @@ def _export_commit(sha: str, dest: Path) -> None:
 
 def _run(before: Path, after: Path, session_id: str) -> None:
     """Run every detector, record the events, print the receipt, exit 1 on any event."""
-    events: list[SnitchEvent] = []
-    try:
-        events += diff_inventory(before, after, session_id=session_id)
-    except InventoryError as exc:
-        reason = str(exc).splitlines()[0]
-        typer.echo(f"warning: inventory detector skipped: {reason}", err=True)
-    events += diff_ast(before, after, session_id=session_id)
-    events += diff_rules(before, after, session_id=session_id)
+    events, warnings = run_detectors(before, after, session_id)
+    for warning in warnings:
+        typer.echo(f"warning: {warning}", err=True)
 
     # Inside the git dir: never committed, no .gitignore entry needed.
     db = Path(_git("rev-parse", "--path-format=absolute", "--git-common-dir"))
@@ -117,18 +109,42 @@ def check(
         _run(before, after, f"staged:{sha}")
 
 
+def _hook(handler: Callable[[dict[str, Any], Path], str | None]) -> None:
+    """Run a hook handler on the stdin payload; print what it returns for Claude Code."""
+    data = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if not data:
+        typer.echo(
+            "snitch: CLAUDE_PLUGIN_DATA is not set; run from the plugin", err=True
+        )
+        raise typer.Exit(1)
+    try:
+        payload = json.loads(sys.stdin.read())
+        if not isinstance(payload, dict):
+            raise hooks.HookError("hook payload is not a JSON object")
+        out = handler(payload, Path(data))
+    except (json.JSONDecodeError, hooks.HookError) as exc:
+        # exit 1: a non-blocking error for every hook event (exit 2 would block some)
+        typer.echo(f"snitch: {exc}", err=True)
+        raise typer.Exit(1) from None
+    if out:
+        typer.echo(out)
+
+
 @hook_app.command("session-start")
 def hook_session_start() -> None:
     """SessionStart: snapshot the working tree as this session's baseline."""
-    data = os.environ.get("CLAUDE_PLUGIN_DATA")
-    if not data:
-        raise _fail(
-            "CLAUDE_PLUGIN_DATA is not set; run this from the Claude Code plugin"
-        )
-    try:
-        payload = json.loads(sys.stdin.read())
-        note = hooks.session_start(payload, Path(data))
-    except (json.JSONDecodeError, AttributeError, hooks.HookError) as exc:
-        raise _fail(f"snitch session-start: {exc}") from None
-    if note:
-        typer.echo(note, err=True)
+    _hook(hooks.session_start)
+
+
+@hook_app.command("post-tool")
+def hook_post_tool() -> None:
+    """PostToolUse: run the detectors against the baseline, record, tell the agent."""
+    _hook(hooks.post_tool)
+
+
+@app.command()
+def mcp() -> None:
+    """Run snitch-mcp (the escalate and ledger tools) over stdio."""
+    from engine.mcp_server import server  # the MCP SDK is only needed here
+
+    server.run()

@@ -71,3 +71,34 @@ def test_survives_reopen(tmp_path: Path) -> None:
     first.close()
 
     assert Ledger(path).events("s1") == [event]
+
+
+def in_file(session_id: str, nodeid: str, file: str) -> SnitchEvent:
+    return make(session_id, nodeid).model_copy(update={"file": file})
+
+
+def test_escalation_covers_events_in_that_file(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.db")
+    earlier = in_file("s1", "tests/test_calc.py::test_a", "tests/test_calc.py")
+    other = in_file("s1", "tests/test_io.py::test_b", "tests/test_io.py")
+    ledger.record([earlier, other])
+
+    ledger.escalate("s1", "tests/test_calc.py::test_a", "expects 4, spec says 5", "")
+    # found after the escalation, same file: covered too
+    later = in_file("s1", "tests/test_calc.py::test_c", "tests/test_calc.py")
+    ledger.record([later])
+
+    escalated = {e.id: e.escalated for e in ledger.events("s1")}
+    assert escalated == {earlier.id: True, other.id: False, later.id: True}
+
+
+def test_escalation_is_per_session(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.db")
+    mine = in_file("s1", "tests/test_calc.py::test_a", "tests/test_calc.py")
+    theirs = in_file("s2", "tests/test_calc.py::test_a", "tests/test_calc.py")
+    ledger.record([mine, theirs])
+
+    ledger.escalate("s1", "tests/test_calc.py", "wrong expectation", "")
+
+    assert [e.escalated for e in ledger.events("s1")] == [True]
+    assert [e.escalated for e in ledger.events("s2")] == [False]

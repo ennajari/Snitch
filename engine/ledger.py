@@ -1,5 +1,6 @@
 import sqlite3
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from engine.models import SnitchEvent
@@ -14,6 +15,14 @@ CREATE TABLE IF NOT EXISTS events (
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_session ON events (session_id);
+CREATE TABLE IF NOT EXISTS escalations (
+    session_id TEXT NOT NULL,
+    file TEXT NOT NULL,
+    test_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -37,12 +46,42 @@ class Ledger:
             )
             return self._db.total_changes - known
 
+    def escalate(
+        self, session_id: str, test_id: str, reason: str, evidence: str
+    ) -> None:
+        """Record that the agent reported `test_id` as wrong instead of changing it."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO escalations VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    test_id.split("::")[0],
+                    test_id,
+                    reason,
+                    evidence,
+                    datetime.now(UTC).timestamp(),
+                ),
+            )
+
     def events(self, session_id: str) -> list[SnitchEvent]:
+        """The session's events; `escalated` is set for files the agent escalated."""
+        # shortcut: escalation covers the whole test file, earlier and later events
+        # alike; match on test node ids if one bad test hides cheats on its neighbours.
+        escalated = {
+            file
+            for (file,) in self._db.execute(
+                "SELECT file FROM escalations WHERE session_id = ?", (session_id,)
+            )
+        }
         rows = self._db.execute(
             "SELECT data FROM events WHERE session_id = ? ORDER BY created_at, id",
             (session_id,),
         )
-        return [SnitchEvent.model_validate_json(data) for (data,) in rows]
+        events = [SnitchEvent.model_validate_json(data) for (data,) in rows]
+        return [
+            e.model_copy(update={"escalated": True}) if e.file in escalated else e
+            for e in events
+        ]
 
     def close(self) -> None:
         self._db.close()
