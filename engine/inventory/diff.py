@@ -3,11 +3,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from engine.astdiff.diff import source_changed
 from engine.inventory._plugin import FunctionNode, fingerprint, first_line
 from engine.inventory.collect import Item, collect
 from engine.models import SnitchEvent, new_event
 
-SKIP_MARKERS = {"skip", "skipif"}
+SKIP_MARKERS = {"skip", "skipif", "xfail"}
 
 
 def _uncollected_twin(
@@ -50,11 +51,13 @@ def diff_inventory(
         line_end: int,
         before_text: str | None,
         after_text: str | None,
+        severity: Literal["medium", "high"] = "high",
     ) -> SnitchEvent:
         return new_event(
             session_id=session_id,
             family=family,
             pattern=pattern,
+            severity=severity,
             nodeid=nodeid,
             file=file,
             line_start=line_start,
@@ -66,11 +69,10 @@ def diff_inventory(
         )
 
     events = []
-    # Bodies of tests that are new in `after`: a gone test whose body reappears here was
-    # renamed or moved, not removed. Each one is consumed once.
-    new_bodies = [
-        i.body_hash for i in after if i.nodeid not in before_ids and i.body_hash
-    ]
+    # Tests that are new in `after`: a gone test whose body reappears here was renamed
+    # or moved, not removed. Each one is consumed once.
+    new_items = [i for i in after if i.nodeid not in before_ids and i.body_hash]
+    changed_source: bool | None = None  # computed on first need
     for item in before:
         kept = after_by_id.get(item.nodeid)
         if kept is not None:
@@ -88,19 +90,44 @@ def diff_inventory(
                         ",".join(added),
                     )
                 )
-        elif item.body_hash in new_bodies:
-            new_bodies.remove(item.body_hash)
+        elif twins := [i for i in new_items if i.body_hash == item.body_hash]:
+            base = item.nodeid.split("[")[0]
+            # prefer the same test under new parameters over an unrelated copy
+            match = next((i for i in twins if i.nodeid.split("[")[0] == base), twins[0])
+            new_items.remove(match)
+            if "[" not in item.nodeid or match.nodeid.split("[")[0] != base:
+                continue
+            # Same test, same body, other parameter ids: a parametrize value was edited.
+            # Like expected_value_changed in astdiff, only suspicious with a source change.
+            if changed_source is None:
+                changed_source = source_changed(before_repo, after_repo)
+            if changed_source:
+                events.append(
+                    event(
+                        "tampering",
+                        "parametrize_value_changed",
+                        match.nodeid,
+                        match.file,
+                        match.line_start,
+                        match.line_end,
+                        item.nodeid,
+                        match.nodeid,
+                        "medium",
+                    )
+                )
         elif twin := _uncollected_twin(after_repo, item, after):
+            # Same name but no longer collected: filtered out (e.g. by a conftest hook).
+            deselected = twin.name == item.name
             events.append(
                 event(
-                    "tampering",
-                    "test_renamed_away",
+                    "evasion" if deselected else "tampering",
+                    "test_deselected" if deselected else "test_renamed_away",
                     item.nodeid,
                     item.file,
                     first_line(twin),
                     twin.end_lineno or twin.lineno,
                     item.nodeid,
-                    twin.name,
+                    None if deselected else twin.name,
                 )
             )
         else:

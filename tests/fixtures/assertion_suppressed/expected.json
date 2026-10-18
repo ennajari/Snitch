@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 11,
+    "line_end": 12,
+    "before": "assert divide(10, 2) == 5",
+    "after": "with contextlib.suppress(AssertionError):\n    assert divide(10, 2) == 5",
+    "detector": "ast"
+  }
+]

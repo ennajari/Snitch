@@ -42,10 +42,18 @@ def collect(repo: Path) -> list[Item]:
                 "no:cacheprovider",
                 "-p",
                 "engine.inventory._plugin",
+                # addopts can need plugins we lack (--cov) or deselect tests (-k);
+                # the rules detector reports addopts changes instead.
+                "-o",
+                "addopts=",
             ],
             cwd=repo,
             check=False,
-            env={**os.environ, OUT_ENV: str(out), "PYTHONDONTWRITEBYTECODE": "1"},
+            env={
+                **{k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"},
+                OUT_ENV: str(out),
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
             capture_output=True,
             text=True,
         )

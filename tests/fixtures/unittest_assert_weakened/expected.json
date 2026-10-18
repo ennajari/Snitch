@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 11,
+    "line_end": 11,
+    "before": "self.assertEqual(divide(10, 2), 5)",
+    "after": "self.assertTrue(divide(10, 2))",
+    "detector": "ast"
+  }
+]

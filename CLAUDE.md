@@ -28,15 +28,21 @@ NOT in this phase: Claude Code plugin hooks, MCP server, mutation testing, LLM j
 TypeScript, GitHub App, benchmark, website. Do not start them.
 
 ## Progress
-- [x] 1. inventory — deleted, renamed-away, newly skipped tests (6 fixtures, all passing)
-      Not yet: xfail markers, pytest.skip() inside a test body, edited parametrize values.
+- [x] 1. inventory — deleted, renamed-away, newly skipped/skipif/xfail tests,
+      parametrize_value_changed (only when non-test source also changed, like
+      expected_value_changed), test_deselected (still defined, no longer collected)
+      (14 fixtures, all passing)
+      Collection runs with `-o addopts=` and without PYTEST_ADDOPTS: inventory sees tests
+      as written; addopts changes are the rules detector's job.
 - [x] 2. astdiff — assertion removed / weakened / guarded, skip_in_body,
       expected_value_changed (13 fixtures, all passing)
-      Not yet: unittest-style asserts, for/while/with guards, positional approx tolerances,
+      Also: unittest self.assertEqual → assertTrue/assertIn/assertIsNotNone,
+      `with suppress(...)` guards. (17 fixtures, all passing)
+      Not yet: other unittest asserts, for/while guards, positional approx tolerances,
       custom python_files patterns; "source changed" is repo-wide, not per import.
 - [x] 3. rules — conftest report hooks, addopts deselection, coverage threshold, CI
       continue-on-error / || true / --no-verify, pytest special-casing, broad except-pass
-      (14 fixtures, all passing; totals 19 cheat / 14 legit)
+      (18 fixtures, all passing)
       Not yet: nested config files, Makefile/shell CI surfaces, real YAML parsing.
       Rule event ids hash (session, pattern, file) — there is no test node id.
 - [x] 4. ledger — `Ledger(path)`: `record(events)` (INSERT OR IGNORE on id), `events(session_id)`;
@@ -51,6 +57,8 @@ TypeScript, GitHub App, benchmark, website. Do not start them.
       2 usage/git error. Inventory collection failure → stderr warning, others still run.
       (6 tests, all passing)
       Not yet: `check` without --staged (working tree), --session override.
+
+Fixture totals: 32 cheat / 17 legit — phase target (30 / 15) met.
 
 ## Core data model (keep exactly; Pydantic v2)
 ```python
