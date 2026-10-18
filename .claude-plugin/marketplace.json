@@ -1,0 +1,14 @@
+{
+  "name": "snitch",
+  "owner": {
+    "name": "ennajari"
+  },
+  "description": "Snitch: the integrity layer for AI coding agents.",
+  "plugins": [
+    {
+      "name": "snitch",
+      "source": "./plugin/snitch",
+      "description": "Catches coding agents that make tests pass by cheating, and gives them an honest way out."
+    }
+  ]
+}
