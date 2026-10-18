@@ -7,5 +7,18 @@
     "name": "ennajari"
   },
   "repository": "https://github.com/ennajari/snitch",
-  "keywords": ["testing", "integrity", "reward-hacking"]
+  "keywords": ["testing", "integrity", "reward-hacking"],
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "observe: record only. warn: tell the agent and you, never block. enforce: also block edits to frozen tests and stops that hide test changes.",
+      "options": [
+        "observe",
+        "warn",
+        "enforce"
+      ],
+      "default": "warn"
+    }
+  }
 }

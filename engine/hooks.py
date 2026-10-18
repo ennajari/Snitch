@@ -8,18 +8,25 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import tomllib
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
+from engine.astdiff.diff import _is_test_file
 from engine.detect import run_detectors
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
 
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+# session baselines are full copies of the repo: drop them after two idle weeks
+RETENTION_SECONDS = 14 * 24 * 3600
 
 
 class HookError(ValueError):
@@ -79,9 +86,22 @@ def _fingerprint(root: Path, files: list[str]) -> str:
     return digest.hexdigest()
 
 
+def _drop_stale_sessions(data_dir: Path, keep: Path) -> None:
+    sessions = data_dir / "sessions"
+    if not sessions.is_dir():
+        return
+    cutoff = time.time() - RETENTION_SECONDS
+    for session in sessions.iterdir():
+        mark = session / "project"  # rewritten whenever the session starts or resumes
+        last_used = (mark if mark.is_file() else session).stat().st_mtime
+        if session != keep and last_used < cutoff:
+            shutil.rmtree(session, ignore_errors=True)
+
+
 def session_start(payload: dict[str, Any], data_dir: Path) -> None:
-    """Snapshot the baseline once per session."""
+    """Snapshot the baseline once per session, and drop stale sessions' data."""
     session = session_dir(data_dir, payload.get("session_id"))
+    _drop_stale_sessions(data_dir, keep=session)
     root = toplevel(Path(str(payload.get("cwd") or ".")))
     if root is not None:
         session.mkdir(parents=True, exist_ok=True)
@@ -123,23 +143,21 @@ def current_session(data_dir: Path, project: Path) -> str | None:
     return newest.parent.name if newest else None
 
 
-def _feedback(events: list[SnitchEvent]) -> str:
-    lines = [f"Snitch flagged {len(events)} new test-integrity event(s):"]
+def _listing(events: list[SnitchEvent]) -> list[str]:
+    lines = []
     for e in events:
         where = f"{e.file}:{e.line_start}"
         if e.line_end != e.line_start:
             where += f"-{e.line_end}"
         lines.append(f"- [{e.severity}] {e.pattern} at {where}")
-    lines.append(
-        "If a test is wrong, do not weaken, skip or delete it: call the snitch "
-        "`escalate` tool with the test id and your reason instead. If this change was "
-        "intended, disclose it in your final message."
-    )
-    return "\n".join(lines)
+    return lines
 
 
-def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
-    """Detect against the baseline; in warn/enforce mode, tell the agent about new events."""
+def _session_events(
+    payload: dict[str, Any], data_dir: Path
+) -> tuple[str, list[SnitchEvent], set[str]] | None:
+    """Detect if the tree changed since the last run, then return (session id, the
+    session's stored events, ids stored before this call). None without a baseline."""
     session_id = payload.get("session_id")
     session = session_dir(data_dir, session_id)
     assert isinstance(session_id, str)  # validated by session_dir
@@ -155,34 +173,200 @@ def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
     files = _listed(root)
     fingerprint = _fingerprint(root, files)
     state = session / "fingerprint"
-    if state.is_file() and state.read_text() == fingerprint:
-        return None  # nothing changed since the last run (most Bash calls)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        current = Path(tmp) / "current"
-        snapshot(root, current, files)
-        events, warnings = run_detectors(baseline, current, session_id)
-    for warning in warnings:
-        print(f"snitch: {warning}", file=sys.stderr)
 
     ledger = Ledger(data_dir / "ledger.db")
     try:
         known = {e.id for e in ledger.events(session_id)}
-        ledger.record(events)
-        stored = ledger.events(session_id)  # with `escalated` filled in
+        # unchanged since the last run (most Bash calls): skip the detectors
+        if not (state.is_file() and state.read_text() == fingerprint):
+            with tempfile.TemporaryDirectory() as tmp:
+                current = Path(tmp) / "current"
+                snapshot(root, current, files)
+                events, warnings = run_detectors(baseline, current, session_id)
+            for warning in warnings:
+                print(f"snitch: {warning}", file=sys.stderr)
+            ledger.record(events)
+            state.write_text(fingerprint)
+        return session_id, ledger.events(session_id), known
     finally:
         ledger.close()
-    state.write_text(fingerprint)
 
-    new = [e for e in stored if e.id not in known and not e.escalated]
-    mode = os.environ.get("CLAUDE_PLUGIN_OPTION_MODE", "warn")
-    if not new or mode == "observe":
+
+MODES = ("observe", "warn", "enforce")
+
+
+def _mode() -> str:
+    """The userConfig `mode`; the /config picker limits it, settings.json may not."""
+    mode = os.environ.get("CLAUDE_PLUGIN_OPTION_MODE", "").strip().lower() or "warn"
+    if mode not in MODES:
+        print(f"snitch: unknown mode {mode!r}, using warn", file=sys.stderr)
+        return "warn"
+    return mode
+
+
+def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
+    """Detect against the baseline; in warn/enforce mode, tell the agent about new events."""
+    found = _session_events(payload, data_dir)
+    if found is None:
         return None
+    _, stored, known = found
+    new = [e for e in stored if e.id not in known and not e.escalated]
+    if not new or _mode() == "observe":
+        return None
+    lines = [f"Snitch flagged {len(new)} new test-integrity event(s):", *_listing(new)]
+    lines.append(
+        "If a test is wrong, do not weaken, skip or delete it: call the snitch "
+        "`escalate` tool with the test id and your reason instead. If this change was "
+        "intended, disclose it in your final message."
+    )
+    context = {"hookEventName": "PostToolUse", "additionalContext": "\n".join(lines)}
+    return json.dumps({"hookSpecificOutput": context})
+
+
+def _mentions(message: str, file: str) -> bool:
+    # shortcut: "disclosed" = the final message names the file (repo path or file
+    # name); the LLM judge (later phase) decides whether it really owns up to the change.
+    text = message.lower()
+    return file.lower() in text or Path(file).name.lower() in text
+
+
+def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
+    """Undisclosed, unescalated events at the end of a turn: warn the user, or (enforce)
+    block the stop once and ask the agent to revert, disclose or escalate."""
+    found = _session_events(payload, data_dir)
+    if found is None:
+        return None
+    _, stored, _ = found
+    unresolved = [e for e in stored if not e.escalated and e.disclosed is not True]
+    if not unresolved:
+        return None
+    message = str(payload.get("last_assistant_message") or "")
+    flags = {e.id: _mentions(message, e.file) for e in unresolved}
+    ledger = Ledger(data_dir / "ledger.db")
+    try:
+        ledger.set_disclosed(flags)
+    finally:
+        ledger.close()
+    hidden = [e for e in unresolved if not flags[e.id]]
+    if not hidden or _mode() == "observe":
+        return None
+    listing = "\n".join(_listing(hidden))
+    # stop_hook_active: Claude is already continuing because of a stop hook, so
+    # blocking again could loop forever; fall back to telling the user.
+    if _mode() == "enforce" and not payload.get("stop_hook_active"):
+        reason = (
+            "Snitch: your final message does not disclose these test changes:\n"
+            f"{listing}\n"
+            "Before finishing, either revert them, or say plainly which test file you "
+            "changed and why. If a test is wrong, call the snitch `escalate` tool."
+        )
+        return json.dumps({"decision": "block", "reason": reason})
     return json.dumps(
         {
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": _feedback(new),
-            }
+            "systemMessage": "Snitch: the agent did not disclose these test changes:\n"
+            f"{listing}\nAsk Claude for the snitch ledger to see the full receipt."
         }
     )
+
+
+def _frozen(root: Path) -> list[str]:
+    """Glob patterns (repo-relative) that the agent may not edit, from .snitch.toml."""
+    path = root / ".snitch.toml"
+    if not path.is_file():
+        return []
+    try:
+        frozen = tomllib.loads(path.read_text()).get("frozen", [])
+    except tomllib.TOMLDecodeError as exc:
+        raise HookError(f"{path}: {exc}") from None
+    if not isinstance(frozen, list) or not all(isinstance(g, str) for g in frozen):
+        raise HookError(f"{path}: `frozen` must be a list of glob strings")
+    return frozen
+
+
+def _repo_path(root: Path, path: Path) -> str | None:
+    """`path` relative to the repo root, or None outside the repo."""
+    try:
+        return path.resolve().relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def _is_frozen(rel: str | None, frozen: list[str]) -> bool:
+    # shortcut: fnmatch's `*` also crosses `/` ("tests/*" covers subfolders);
+    # switch to PurePath.full_match once we require Python 3.13.
+    return rel is not None and any(fnmatch(rel, glob) for glob in frozen)
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Words of each simple command in a shell line (split on ; && || | & and parens)."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:  # unbalanced quotes
+        tokens = command.split()
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token and all(c in "();<>|&" for c in token):
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    return [words for words in segments if words]
+
+
+def _in_place(word: str) -> bool:
+    if word.startswith("--"):
+        return word == "--in-place" or word.startswith("--in-place=")
+    return word.startswith("-") and "i" in word[1:]  # -i, -i.bak, -Ei
+
+
+def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str | None:
+    # shortcut: catches sed -i and git --no-verify only; `cd` inside the line, perl -i,
+    # redirections and python one-liners still get through to the PostToolUse detectors.
+    for words in _segments(command):
+        program = Path(words[0]).name
+        if program == "git" and "--no-verify" in words:
+            return "`--no-verify` skips the repository's git hooks"
+        if program != "sed" or not any(_in_place(w) for w in words[1:]):
+            continue
+        for word in words[1:]:
+            target = Path(word)
+            is_test = target.suffix == ".py" and _is_test_file(target)
+            if not word.startswith("-") and (
+                is_test or _is_frozen(_repo_path(root, cwd / target), frozen)
+            ):
+                return f"`sed -i` would rewrite {word} in place"
+    return None
+
+
+def pre_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
+    """Enforce mode: deny edits to frozen paths, `sed -i` on tests and `--no-verify`."""
+    if _mode() != "enforce":
+        return None
+    cwd = Path(str(payload.get("cwd") or "."))
+    root = toplevel(cwd)
+    tool_input = payload.get("tool_input")
+    if root is None or not isinstance(tool_input, dict):
+        return None
+    frozen = _frozen(root)
+    if payload.get("tool_name") == "Bash":
+        problem = _bash_problem(str(tool_input.get("command") or ""), cwd, root, frozen)
+    else:  # Edit, Write, MultiEdit
+        file_path = tool_input.get("file_path")
+        rel = _repo_path(root, cwd / str(file_path)) if file_path else None
+        problem = (
+            f"{rel} is frozen in .snitch.toml" if _is_frozen(rel, frozen) else None
+        )
+    if problem is None:
+        return None
+    reason = (
+        f"Snitch (enforce mode) blocked this: {problem}. If a test or check looks "
+        "wrong, do not change or bypass it: call the snitch `escalate` tool with the "
+        "test id, your reason and evidence, then carry on with the rest of the task."
+    )
+    decision = {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }
+    return json.dumps({"hookSpecificOutput": decision})

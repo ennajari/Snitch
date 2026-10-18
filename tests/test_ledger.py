@@ -102,3 +102,20 @@ def test_escalation_is_per_session(tmp_path: Path) -> None:
 
     assert [e.escalated for e in ledger.events("s1")] == [True]
     assert [e.escalated for e in ledger.events("s2")] == [False]
+
+
+def test_disclosed_is_stored(tmp_path: Path) -> None:
+    path = tmp_path / "ledger.db"
+    ledger = Ledger(path)
+    told = make("s1", "test_calc.py::test_a")
+    hidden = make("s1", "test_calc.py::test_b")
+    ledger.record([told, hidden])
+
+    ledger.set_disclosed({told.id: True, hidden.id: False})
+    ledger.close()
+
+    reopened = Ledger(path)
+    assert {e.id: e.disclosed for e in reopened.events("s1")} == {
+        told.id: True,
+        hidden.id: False,
+    }

@@ -136,10 +136,22 @@ def hook_session_start() -> None:
     _hook(hooks.session_start)
 
 
+@hook_app.command("pre-tool")
+def hook_pre_tool() -> None:
+    """PreToolUse (enforce): deny edits to frozen paths, sed -i on tests, --no-verify."""
+    _hook(hooks.pre_tool)
+
+
 @hook_app.command("post-tool")
 def hook_post_tool() -> None:
     """PostToolUse: run the detectors against the baseline, record, tell the agent."""
     _hook(hooks.post_tool)
+
+
+@hook_app.command("stop")
+def hook_stop() -> None:
+    """Stop: check that the agent disclosed or escalated every event of the session."""
+    _hook(hooks.stop)
 
 
 @app.command()

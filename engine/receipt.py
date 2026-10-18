@@ -16,6 +16,15 @@ def _prefixed(sign: str, text: str | None) -> list[str]:
     return [f"{sign} {line}" for line in text.splitlines()] if text else []
 
 
+def _status(event: SnitchEvent) -> str:
+    """Suffix for an event's heading; empty while nothing is known yet."""
+    if event.escalated:
+        return " — escalated"
+    if event.disclosed is None:
+        return ""
+    return " — disclosed" if event.disclosed else " — not disclosed"
+
+
 def render(events: list[SnitchEvent]) -> str:
     """Markdown receipt, most severe first; stable for a given set of events."""
     if not events:
@@ -40,7 +49,7 @@ def render(events: list[SnitchEvent]) -> str:
             f"| {e.severity} | {e.family} | {e.pattern} | {location} | {e.detector} |"
         )
     for e in ordered:
-        lines += ["", f"## {e.pattern} — {_location(e)}"]
+        lines += ["", f"## {e.pattern} — {_location(e)}{_status(e)}"]
         diff = _prefixed("-", e.before) + _prefixed("+", e.after)
         if diff:
             # shortcut: a ``` inside before/after would close the fence early;

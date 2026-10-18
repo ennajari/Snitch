@@ -54,16 +54,32 @@ now; proper packaging decided at publish time.
       work tree like the baseline, runs all detectors (engine/detect.py, shared with the CLI),
       records to `<data>/ledger.db`; warn/enforce add `additionalContext` for NEW events only;
       observe records silently. A file-list/size/mtime fingerprint skips unchanged trees
-      (~0.4s) — a run with detectors takes ~1.3s on a tiny repo. Hook errors exit 1. (7 tests)
+      (~0.4s) — a run with detectors takes ~1.3s on a tiny repo. Hook errors exit 1.
+      Skips silently when cwd's repo is not the session's own repo. (8 tests)
 - [x] 4. snitch-mcp — `snitch mcp` (engine/mcp_server.py, stdio) with `escalate(test_id,
       reason, evidence)` and `ledger()` (the receipt). Escalations live in their own ledger
       table; `Ledger.events()` sets `escalated` for events in an escalated test file (earlier
       and later ones). post-tool no longer warns about escalated files and points the agent
-      at `escalate`. The session = newest one started on CLAUDE_PROJECT_DIR. (12 tests)
-- [ ] 5. Stop verifier  ← current — also show escalated/disclosed in the receipt
-- [ ] 6. PreToolUse gate (enforce)
-- [ ] 7. modes via userConfig
-- [ ] 8. 20 eval cases + measured delta
+      at `escalate`. The session = newest one started on the git root of
+      CLAUDE_PROJECT_DIR (may be a subdirectory); `escalate` normalizes absolute and
+      ./-relative test paths to repo-relative ones. (12 tests)
+- [x] 5. Stop verifier — `snitch hook stop` (command hook, deterministic): runs the
+      detectors once more (fingerprint skip), then for events neither escalated nor already
+      disclosed sets `disclosed` = final message names the event's file (repo path or file
+      name; shortcut until the judge). observe: record only; warn: `systemMessage` to the
+      user; enforce: `decision: block` with a reason, but never when `stop_hook_active`
+      (falls back to the user warning). Receipt headings show escalated / disclosed /
+      not disclosed. SessionStart drops other sessions untouched for 14 days. (11 tests)
+- [x] 6. PreToolUse gate — `snitch hook pre-tool` on Edit|Write|MultiEdit|Bash, enforce
+      mode only: denies edits to paths matching `frozen = [globs]` in the repo's
+      `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` on
+      pytest-named test files or frozen paths, and `git ... --no-verify`; the deny reason
+      points to `escalate`. A malformed `.snitch.toml` is a hook error (exit 1). (20 tests)
+- [x] 7. modes via userConfig — `plugin.json` `userConfig.mode` (string picker: observe |
+      warn | enforce, default warn; so the plugin needs Claude Code ≥ 2.1.271). Hooks read
+      `CLAUDE_PLUGIN_OPTION_MODE`, trimmed and lowercased; empty → warn, unknown → warn
+      plus a stderr note. (6 tests)
+- [ ] 8. 20 eval cases + measured delta  ← current
 
 ## Plugin platform notes (checked against Claude Code 2.1.301 docs)
 - `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/<id>/`: kept across updates, deleted

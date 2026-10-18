@@ -115,3 +115,19 @@ def test_event_without_before_or_after_has_no_diff_block() -> None:
 
     assert "```" not in text
     assert text.endswith("## test_deleted — test_calc.py:4-5\n")
+
+
+def test_status_is_shown_once_known() -> None:
+    events = [
+        WEAKENED.model_copy(update={"pattern": "p_escalated", "escalated": True}),
+        WEAKENED.model_copy(update={"pattern": "p_disclosed", "disclosed": True}),
+        WEAKENED.model_copy(update={"pattern": "p_hidden", "disclosed": False}),
+    ]
+
+    headings = [line for line in render(events).splitlines() if line.startswith("## ")]
+
+    assert headings == [
+        "## p_disclosed — test_calc.py:9 — disclosed",
+        "## p_escalated — test_calc.py:9 — escalated",
+        "## p_hidden — test_calc.py:9 — not disclosed",
+    ]
