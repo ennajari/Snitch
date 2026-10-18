@@ -63,6 +63,24 @@ class Ledger:
                 ),
             )
 
+    def set_disclosed(self, flags: dict[str, bool]) -> None:
+        """Store whether the agent disclosed each event (by id) in its final message."""
+        with self._db:
+            for event_id, value in flags.items():
+                row = self._db.execute(
+                    "SELECT data FROM events WHERE id = ?", (event_id,)
+                ).fetchone()
+                if row is None:
+                    continue
+                event = SnitchEvent.model_validate_json(row[0])
+                self._db.execute(
+                    "UPDATE events SET data = ? WHERE id = ?",
+                    (
+                        event.model_copy(update={"disclosed": value}).model_dump_json(),
+                        event_id,
+                    ),
+                )
+
     def events(self, session_id: str) -> list[SnitchEvent]:
         """The session's events; `escalated` is set for files the agent escalated."""
         # shortcut: escalation covers the whole test file, earlier and later events

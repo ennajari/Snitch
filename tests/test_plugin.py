@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -44,3 +45,13 @@ def test_bin_runs_the_engine_cli() -> None:
     assert "check" in proc.stdout
     # added after the first build: fails if bin/snitch runs a stale copy of the engine
     assert "hook" in proc.stdout
+
+
+def test_mode_is_a_user_config_picker_defaulting_to_warn() -> None:
+    manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
+
+    mode = manifest["userConfig"]["mode"]
+
+    assert mode["type"] == "string"
+    assert mode["options"] == ["observe", "warn", "enforce"]
+    assert mode["default"] == "warn"
