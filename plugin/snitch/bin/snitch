@@ -1,6 +1,10 @@
 #!/bin/sh
-# The engine CLI, on Claude's PATH while the plugin is enabled.
-# SNITCH_ENGINE overrides the source, e.g. a local checkout while developing.
+# The engine CLI, on Claude's PATH while the plugin is enabled, and the hooks' entry point.
+if [ -n "$SNITCH_ENGINE" ]; then
+  # A local checkout (development): `uv run` always runs its current source,
+  # where `uvx --from <path>` would keep serving the first build it cached.
+  exec uv run --quiet --project "$SNITCH_ENGINE" snitch "$@"
+fi
 # shortcut: uvx installs the engine from the git repo on first run; switch to a
 # published package when the plugin is published.
-exec uvx --from "${SNITCH_ENGINE:-git+https://github.com/ennajari/snitch}" snitch "$@"
+exec uvx --from git+https://github.com/ennajari/snitch snitch "$@"

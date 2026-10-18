@@ -1,3 +1,15 @@
 {
-  "hooks": {}
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/snitch",
+            "args": ["hook", "session-start"]
+          }
+        ]
+      }
+    ]
+  }
 }

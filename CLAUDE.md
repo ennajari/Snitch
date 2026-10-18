@@ -43,10 +43,14 @@ Open decision: how `bin/snitch` finds the engine — `uvx --from <this repo> sni
 now; proper packaging decided at publish time.
 
 ## Progress
-- [x] 1. skeleton — plugin.json, bin/snitch (uvx; SNITCH_ENGINE overrides the source),
-      root .claude-plugin/marketplace.json; `validate --strict` passes on both (3 tests)
-- [ ] 2. session-start baseline  ← current
-- [ ] 3. post-tool detect (observe / warn)
+- [x] 1. skeleton — plugin.json, bin/snitch, root .claude-plugin/marketplace.json;
+      `validate --strict` passes on both (3 tests). bin/snitch: `uv run --project
+      $SNITCH_ENGINE` for a local checkout, else `uvx --from git+https://github.com/ennajari/snitch`.
+- [x] 2. session-start baseline — `snitch hook session-start` (engine/hooks.py): copies
+      tracked + untracked non-ignored files to `<data>/sessions/<id>/baseline/` once per
+      session (resume/compact keep it); session_id must match [A-Za-z0-9_-]; non-git cwd →
+      stderr note, exit 0 (4 tests)
+- [ ] 3. post-tool detect (observe / warn)  ← current
 - [ ] 4. snitch-mcp: escalate, ledger
 - [ ] 5. Stop verifier
 - [ ] 6. PreToolUse gate (enforce)
@@ -66,6 +70,8 @@ now; proper packaging decided at publish time.
 - Agent-type hooks exist but are experimental: start the Stop verifier as a command hook.
 - Monitors go under `experimental.monitors` (default file `monitors/monitors.json`).
 - `bin/` is on the Bash tool's PATH, but claude.ai / Cowork refuse plugins with `bin/`.
+- `uvx --from <local path>` caches its first build and serves stale code after edits;
+  use `uv run --project <path>` for a local checkout.
 - Validate the marketplace with `claude plugin validate --strict .claude-plugin/marketplace.json`
   (the repo root would scan local `.claude/` too). Empty JSON component files fail validation.
 

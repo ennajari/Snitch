@@ -1,5 +1,8 @@
 import io
+import json
+import os
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path
@@ -7,6 +10,7 @@ from typing import Annotated
 
 import typer
 
+from engine import hooks
 from engine.astdiff import diff_ast
 from engine.inventory import diff_inventory
 from engine.inventory.collect import InventoryError
@@ -16,6 +20,8 @@ from engine.receipt import render
 from engine.rules import diff_rules
 
 app = typer.Typer(help="Snitch: catches coding agents that cheat on tests.")
+hook_app = typer.Typer(help="Claude Code hook handlers (read the hook JSON on stdin).")
+app.add_typer(hook_app, name="hook")
 
 
 @app.callback()
@@ -109,3 +115,20 @@ def check(
         _export_commit(sha, before)
         _git("-C", str(root), "checkout-index", "-a", f"--prefix={after}/")
         _run(before, after, f"staged:{sha}")
+
+
+@hook_app.command("session-start")
+def hook_session_start() -> None:
+    """SessionStart: snapshot the working tree as this session's baseline."""
+    data = os.environ.get("CLAUDE_PLUGIN_DATA")
+    if not data:
+        raise _fail(
+            "CLAUDE_PLUGIN_DATA is not set; run this from the Claude Code plugin"
+        )
+    try:
+        payload = json.loads(sys.stdin.read())
+        note = hooks.session_start(payload, Path(data))
+    except (json.JSONDecodeError, AttributeError, hooks.HookError) as exc:
+        raise _fail(f"snitch session-start: {exc}") from None
+    if note:
+        typer.echo(note, err=True)
