@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Integrity layer for AI coding agents: detects test cheating."
 requires-python = ">=3.12"
 dependencies = [
+    "mcp>=2.3.0",
     "pydantic>=2.14.0",
     "pytest>=9.1.1",
     "structlog>=26.1.0",

@@ -50,9 +50,17 @@ now; proper packaging decided at publish time.
       tracked + untracked non-ignored files to `<data>/sessions/<id>/baseline/` once per
       session (resume/compact keep it); session_id must match [A-Za-z0-9_-]; non-git cwd →
       stderr note, exit 0 (4 tests)
-- [ ] 3. post-tool detect (observe / warn)  ← current
-- [ ] 4. snitch-mcp: escalate, ledger
-- [ ] 5. Stop verifier
+- [x] 3. post-tool detect — `snitch hook post-tool` on Edit|Write|MultiEdit|Bash: copies the
+      work tree like the baseline, runs all detectors (engine/detect.py, shared with the CLI),
+      records to `<data>/ledger.db`; warn/enforce add `additionalContext` for NEW events only;
+      observe records silently. A file-list/size/mtime fingerprint skips unchanged trees
+      (~0.4s) — a run with detectors takes ~1.3s on a tiny repo. Hook errors exit 1. (7 tests)
+- [x] 4. snitch-mcp — `snitch mcp` (engine/mcp_server.py, stdio) with `escalate(test_id,
+      reason, evidence)` and `ledger()` (the receipt). Escalations live in their own ledger
+      table; `Ledger.events()` sets `escalated` for events in an escalated test file (earlier
+      and later ones). post-tool no longer warns about escalated files and points the agent
+      at `escalate`. The session = newest one started on CLAUDE_PROJECT_DIR. (12 tests)
+- [ ] 5. Stop verifier  ← current — also show escalated/disclosed in the receipt
 - [ ] 6. PreToolUse gate (enforce)
 - [ ] 7. modes via userConfig
 - [ ] 8. 20 eval cases + measured delta
@@ -68,6 +76,8 @@ now; proper packaging decided at publish time.
 - PreToolUse deny: `hookSpecificOutput.permissionDecision: "deny"` + `permissionDecisionReason`.
 - PostToolUse feedback: `hookSpecificOutput.additionalContext` (shown next to the tool result).
 - Agent-type hooks exist but are experimental: start the Stop verifier as a command hook.
+- MCP stdio servers get `CLAUDE_PROJECT_DIR` but no session id: SessionStart writes
+  `sessions/<id>/project` (also on resume) and the server picks the newest one for its project.
 - Monitors go under `experimental.monitors` (default file `monitors/monitors.json`).
 - `bin/` is on the Bash tool's PATH, but claude.ai / Cowork refuse plugins with `bin/`.
 - `uvx --from <local path>` caches its first build and serves stale code after edits;
@@ -112,7 +122,7 @@ class SnitchEvent(BaseModel):
 - Python 3.12, managed with **uv** (`uv add`, `uv run`). Never use pip directly.
 - Libraries: pydantic v2, tree-sitter + tree-sitter-python, typer (CLI), structlog,
   pytest (runtime: the inventory detector runs `pytest --collect-only` on target repos),
-  FastMCP (snitch-mcp server).
+  mcp (official MCP SDK, snitch-mcp; FastMCP is `mcp.server.mcpserver.MCPServer` in v2).
 - Tests: pytest. Run `uv run pytest -q` after every change.
 - Lint/format: `uv run ruff check . && uv run ruff format .`
 - Types: `uv run mypy engine` (strict on `engine/`).
