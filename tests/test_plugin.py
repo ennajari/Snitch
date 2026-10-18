@@ -42,3 +42,5 @@ def test_bin_runs_the_engine_cli() -> None:
     assert proc.returncode == 0, proc.stderr
     assert "diff" in proc.stdout
     assert "check" in proc.stdout
+    # added after the first build: fails if bin/snitch runs a stale copy of the engine
+    assert "hook" in proc.stdout
