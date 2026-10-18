@@ -42,8 +42,15 @@ TypeScript, GitHub App, benchmark, website. Do not start them.
 - [x] 4. ledger — `Ledger(path)`: `record(events)` (INSERT OR IGNORE on id), `events(session_id)`;
       one table, event stored as JSON (5 tests, all passing)
       Not yet: updating judge_verdict / disclosed / escalated on a stored event.
-- [ ] 5. receipt  ← current
-- [ ] 6. CLI commands
+- [x] 5. receipt — `render(events) -> str`: summary table + one diff block per event,
+      most severe first (5 tests, all passing)
+      Not yet: judge / disclosed / escalated fields, SARIF.
+- [x] 6. CLI — `snitch diff <base> <head>` (git archive of both commits) and
+      `snitch check --staged` (HEAD vs index); runs all three detectors, records to
+      `<git dir>/snitch/ledger.db`, prints the receipt. Exit 0 clean, 1 any event,
+      2 usage/git error. Inventory collection failure → stderr warning, others still run.
+      (6 tests, all passing)
+      Not yet: `check` without --staged (working tree), --session override.
 
 ## Core data model (keep exactly; Pydantic v2)
 ```python
@@ -73,7 +80,8 @@ class SnitchEvent(BaseModel):
 
 ## Stack and commands
 - Python 3.12, managed with **uv** (`uv add`, `uv run`). Never use pip directly.
-- Libraries: pydantic v2, tree-sitter + tree-sitter-python, typer (CLI), structlog.
+- Libraries: pydantic v2, tree-sitter + tree-sitter-python, typer (CLI), structlog,
+  pytest (runtime: the inventory detector runs `pytest --collect-only` on target repos).
 - Tests: pytest. Run `uv run pytest -q` after every change.
 - Lint/format: `uv run ruff check . && uv run ruff format .`
 - Types: `uv run mypy engine` (strict on `engine/`).
