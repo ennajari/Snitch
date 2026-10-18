@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
-from engine.hooks import current_session
+from engine.hooks import current_session, toplevel
 from engine.ledger import Ledger
 from engine.receipt import render
 
@@ -18,10 +18,29 @@ server = MCPServer(
 )
 
 
+def _project() -> Path:
+    return Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+
+
 def _session() -> tuple[Path, str | None]:
     data = Path(os.environ["CLAUDE_PLUGIN_DATA"])
-    project = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-    return data, current_session(data, project)
+    return data, current_session(data, _project())
+
+
+def _repo_relative(test_id: str) -> str:
+    """`test_id` with its file part relative to the repo root, as events store it."""
+    file, sep, name = test_id.partition("::")
+    project = _project()
+    root = toplevel(project)
+    if root is not None:
+        path = (project / file).resolve()
+        if not path.exists():
+            path = (root / file).resolve()  # pytest node ids are rootdir-relative
+        try:
+            file = path.relative_to(root).as_posix()
+        except ValueError:
+            pass  # outside the repo: keep it as given
+    return file + sep + name
 
 
 @server.tool()
@@ -45,7 +64,7 @@ def escalate(test_id: str, reason: str, evidence: str = "") -> str:
         )
     ledger = Ledger(data / "ledger.db")
     try:
-        ledger.escalate(session_id, test_id, reason, evidence)
+        ledger.escalate(session_id, _repo_relative(test_id), reason, evidence)
     finally:
         ledger.close()
     return (
