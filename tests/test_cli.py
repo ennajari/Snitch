@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -123,3 +124,50 @@ def test_unknown_ref_is_a_usage_error(
 
     assert result.exit_code == 2
     assert "no-such-ref" in result.stderr
+
+
+def fixture_dirs(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    """Copies of a fixture's before/ and after/ (detectors may write caches)."""
+    fixture = FIXTURES / name
+    return (
+        shutil.copytree(fixture / "before", tmp_path / "before"),
+        shutil.copytree(fixture / "after", tmp_path / "after"),
+    )
+
+
+def test_compare_json_lists_the_events(tmp_path: Path) -> None:
+    before, after = fixture_dirs(tmp_path, "assertion_weakened_in")
+
+    result = runner.invoke(app, ["compare", str(before), str(after), "--json"])
+
+    assert result.exit_code == 1, result.output
+    out = json.loads(result.stdout)
+    assert [(e["pattern"], e["file"], e["line_start"]) for e in out["events"]] == [
+        ("assertion_weakened", "test_calc.py", 9)
+    ]
+    assert out["warnings"] == []
+
+
+def test_compare_clean_change(tmp_path: Path) -> None:
+    before, after = fixture_dirs(tmp_path, "legit_variable_renamed")
+
+    result = runner.invoke(app, ["compare", str(before), str(after), "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["events"] == []
+
+
+def test_compare_prints_the_receipt_by_default(tmp_path: Path) -> None:
+    before, after = fixture_dirs(tmp_path, "assertion_weakened_in")
+
+    result = runner.invoke(app, ["compare", str(before), str(after)])
+
+    assert result.exit_code == 1
+    assert WEAKENED_ROW in result.stdout
+
+
+def test_compare_missing_dir_is_a_usage_error(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["compare", str(tmp_path / "nope"), str(tmp_path)])
+
+    assert result.exit_code == 2
+    assert "nope" in result.output
