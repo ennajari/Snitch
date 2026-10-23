@@ -55,3 +55,36 @@ def test_mode_is_a_user_config_picker_defaulting_to_warn() -> None:
     assert mode["type"] == "string"
     assert mode["options"] == ["observe", "warn", "enforce"]
     assert mode["default"] == "warn"
+
+
+def test_bin_takes_engine_and_mode_from_eval_variables(tmp_path: Path) -> None:
+    # plugin eval runs pass only EVAL_* variables through to the plugin's hooks
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    payload = {
+        "session_id": "s1",
+        "cwd": str(tmp_path),
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "git commit --no-verify -m x"},
+    }
+    env = {k: v for k, v in os.environ.items() if k != "SNITCH_ENGINE"}
+    env |= {
+        "EVAL_SNITCH_ENGINE": str(ROOT),
+        "EVAL_SNITCH_MODE": "enforce",
+        "CLAUDE_PLUGIN_OPTION_MODE": "warn",
+        "CLAUDE_PLUGIN_DATA": str(tmp_path / "data"),
+    }
+    proc = subprocess.run(
+        [str(PLUGIN / "bin" / "snitch"), "hook", "pre-tool"],
+        input=json.dumps(payload),
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,  # the GitHub fallback would be slow, and would run pushed code
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    decision = json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"]
+    assert decision == "deny"

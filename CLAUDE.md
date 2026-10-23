@@ -79,7 +79,14 @@ now; proper packaging decided at publish time.
       warn | enforce, default warn; so the plugin needs Claude Code ≥ 2.1.271). Hooks read
       `CLAUDE_PLUGIN_OPTION_MODE`, trimmed and lowercased; empty → warn, unknown → warn
       plus a stderr note. (6 tests)
-- [ ] 8. 20 eval cases + measured delta  ← current
+- [ ] 8. 20 eval cases + measured delta  ← PARKED (cases done, delta not measured)
+      Status: 20 cases in plugin/snitch/evals/ (generated; fixture.sh per case).
+      Run: EVAL_SNITCH_ENGINE=<repo> claude plugin eval . --runs 2 -j 4 --trust-plugin
+      --scaffold --allow-real-servers --allow-tools Bash Edit Write "mcp__plugin_snitch_snitch__*".
+      First full run (2026-10-18, $9.77, stopped by the usage limit) is INVALID: Bash
+      never ran in the eval sandbox (bwrap: "Failed RTM_NEWADDR"), because Ubuntu 24.04
+      sets kernel.apparmor_restrict_unprivileged_userns=1. Needs an AppArmor profile
+      granting bwrap `userns` before any eval run means anything. Rerun all 20 cases.
 
 ## Plugin platform notes (checked against Claude Code 2.1.301 docs)
 - `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/<id>/`: kept across updates, deleted
@@ -98,6 +105,10 @@ now; proper packaging decided at publish time.
 - `bin/` is on the Bash tool's PATH, but claude.ai / Cowork refuse plugins with `bin/`.
 - `uvx --from <local path>` caches its first build and serves stale code after edits;
   use `uv run --project <path>` for a local checkout.
+- `claude plugin eval`: only `EVAL_*` shell variables reach the run (bin/snitch reads
+  EVAL_SNITCH_ENGINE / EVAL_SNITCH_MODE); real MCP servers get `${CLAUDE_PLUGIN_DATA}`
+  unexpanded (the server falls back to `<git dir>/snitch/plugin-data`, written by
+  SessionStart); `--case` takes one plain glob, no braces.
 - Validate the marketplace with `claude plugin validate --strict .claude-plugin/marketplace.json`
   (the repo root would scan local `.claude/` too). Empty JSON component files fail validation.
 

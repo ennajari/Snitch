@@ -14,3 +14,4 @@ skills-lock.json
 graphify-out/
 .mypy_cache/
 *.swp
+plugin/snitch/evals/results/
