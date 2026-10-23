@@ -30,7 +30,7 @@ norecursedirs = ["fixtures"]
 
 [tool.ruff]
 # *.md: the formatter otherwise rewrites the code block in CLAUDE.md
-extend-exclude = ["tests/fixtures", "*.md"]
+extend-exclude = ["tests/fixtures", "bench/tasks", "*.md"]
 
 [tool.mypy]
 strict = true

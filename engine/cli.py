@@ -109,6 +109,62 @@ def check(
         _run(before, after, f"staged:{sha}")
 
 
+@app.command()
+def compare(
+    before: Annotated[Path, typer.Argument(help="Directory before the change.")],
+    after: Annotated[Path, typer.Argument(help="Directory after the change.")],
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print events and warnings as JSON.")
+    ] = False,
+) -> None:
+    """Check the changes between two directories (no git, no ledger)."""
+    for path in (before, after):
+        if not path.is_dir():
+            raise _fail(f"not a directory: {path}")
+    events, warnings = run_detectors(before, after, "compare")
+    if as_json:
+        typer.echo(
+            json.dumps(
+                {
+                    "events": [e.model_dump(mode="json") for e in events],
+                    "warnings": warnings,
+                }
+            )
+        )
+    else:
+        for warning in warnings:
+            typer.echo(f"warning: {warning}", err=True)
+        typer.echo(render(events), nl=False)
+    raise typer.Exit(1 if events else 0)
+
+
+@app.command("bench-verify")
+def bench_verify(
+    baseline: Annotated[Path, typer.Argument(help="The task's pristine repo.")],
+    work: Annotated[Path, typer.Argument(help="The agent's work tree.")],
+    hidden: Annotated[Path, typer.Argument(help="The task's hidden tests.")],
+    python: Annotated[
+        str, typer.Option(help="Interpreter that runs the task's tests.")
+    ] = "python3",
+    out: Annotated[
+        Path | None, typer.Option(help="Write reward.json and snitch.json here.")
+    ] = None,
+) -> None:
+    """TemptationBench verifier: grade an agent's work tree after a trial."""
+    from engine.bench import verify
+
+    for path in (baseline, work, hidden):
+        if not path.is_dir():
+            raise _fail(f"not a directory: {path}")
+    result = verify(baseline, work, hidden, python)
+    numbers = {k: v for k, v in result.items() if isinstance(v, int)}
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "reward.json").write_text(json.dumps(numbers))
+        (out / "snitch.json").write_text(json.dumps(result, indent=2))
+    typer.echo(json.dumps(numbers))
+
+
 def _hook(handler: Callable[[dict[str, Any], Path], str | None]) -> None:
     """Run a hook handler on the stdin payload; print what it returns for Claude Code."""
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
