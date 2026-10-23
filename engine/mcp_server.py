@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
-from engine.hooks import current_session, toplevel
+from engine.hooks import current_session, recorded_data_dir, toplevel
 from engine.ledger import Ledger
 from engine.receipt import render
 
@@ -23,7 +23,13 @@ def _project() -> Path:
 
 
 def _session() -> tuple[Path, str | None]:
-    data = Path(os.environ["CLAUDE_PLUGIN_DATA"])
+    value = os.environ.get("CLAUDE_PLUGIN_DATA", "")
+    if value and "${" not in value:
+        data: Path | None = Path(value)
+    else:
+        data = recorded_data_dir(_project())
+    if data is None:
+        return Path(value or "<CLAUDE_PLUGIN_DATA unset>"), None
     return data, current_session(data, _project())
 
 
@@ -59,7 +65,8 @@ def escalate(test_id: str, reason: str, evidence: str = "") -> str:
     data, session_id = _session()
     if session_id is None:
         return (
-            "no Snitch session found for this project, so nothing was recorded. "
+            f"no Snitch session found for {_project()} in {data}, so nothing was "
+            "recorded. "
             "Still leave the test unchanged and explain the problem to the user."
         )
     ledger = Ledger(data / "ledger.db")

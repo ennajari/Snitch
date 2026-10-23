@@ -189,3 +189,23 @@ def test_escalate_accepts_other_path_forms(
     store = Ledger(data / "ledger.db")
     assert [e.escalated for e in store.events("s1")] == [True]
     store.close()
+
+
+@pytest.mark.parametrize("value", [None, "${CLAUDE_PLUGIN_DATA}"])
+def test_finds_the_data_dir_when_the_env_var_is_not_expanded(
+    session: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    # `claude plugin eval` hands real MCP servers "${CLAUDE_PLUGIN_DATA}" unexpanded
+    data, _ = session
+    if value is None:
+        monkeypatch.delenv("CLAUDE_PLUGIN_DATA")
+    else:
+        monkeypatch.setenv("CLAUDE_PLUGIN_DATA", value)
+
+    reply = escalate("test_calc.py::test_add", "expects 3, the spec says 2")
+
+    assert reply.startswith("Escalation recorded")
+    store = Ledger(data / "ledger.db")
+    store.record([event("s1", "test_calc.py")])
+    assert [e.escalated for e in store.events("s1")] == [True]
+    store.close()

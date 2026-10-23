@@ -52,6 +52,27 @@ def toplevel(cwd: Path) -> Path | None:
     return Path(top.stdout.strip()).resolve() if top.returncode == 0 else None
 
 
+def _data_pointer(root: Path) -> Path:
+    """`<git dir>/snitch/plugin-data`: the plugin data dir, for the MCP server."""
+    git_dir = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return Path(git_dir) / "snitch" / "plugin-data"
+
+
+def recorded_data_dir(project: Path) -> Path | None:
+    """The plugin data dir the last SessionStart on this repo used, if any."""
+    # MCP servers should get ${CLAUDE_PLUGIN_DATA} expanded, but `claude plugin eval`
+    # passes it through literally; SessionStart leaves this pointer for that case.
+    root = toplevel(project)
+    pointer = _data_pointer(root) if root is not None else None
+    return Path(pointer.read_text()) if pointer and pointer.is_file() else None
+
+
 def _listed(root: Path) -> list[str]:
     """Tracked and untracked, non-ignored files of the git work tree at `root`."""
     out = subprocess.run(
@@ -107,6 +128,9 @@ def session_start(payload: dict[str, Any], data_dir: Path) -> None:
         session.mkdir(parents=True, exist_ok=True)
         # rewritten on resume too: its mtime marks the project's active session
         (session / "project").write_text(str(root))
+        pointer = _data_pointer(root)
+        pointer.parent.mkdir(exist_ok=True)
+        pointer.write_text(str(data_dir.resolve()))
     baseline = session / "baseline"
     if baseline.exists():
         return  # resume / compact: the first baseline stays
