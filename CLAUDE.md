@@ -165,7 +165,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
       high/medium/low -> error/warning/note; fingerprint = event id)
 - [x] pre-commit: `.pre-commit-hooks.yaml` (id `snitch`, runs `snitch check --staged`);
       checked with `pre-commit try-repo` (clean change passes, weakened assert blocked)
-- [x] GitHub Action: root `action.yml` (composite; `uses: ennajari/snitch@<ref>`; needs
+- [x] GitHub Action: root `action.yml` (composite; `uses: ennajari/snitch@v1`; needs
       `actions/checkout` with fetch-depth 0): `snitch diff base head --sarif`, receipt in
       the job summary + one PR comment (updated), SARIF to code scanning, fails on events
       (input `fail-on-events`). Verified on a real draft PR (#1, closed): comment posted,

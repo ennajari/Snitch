@@ -149,7 +149,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # Snitch compares the PR base with its head
-      - uses: ennajari/snitch@master
+      - uses: ennajari/snitch@v1
 ```
 
 Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `false`), `comment`, `upload-sarif`, `base`, `head`.
@@ -160,7 +160,7 @@ Output: `events`.
 ```yaml
 repos:
   - repo: https://github.com/ennajari/snitch
-    rev: master
+    rev: v0.1.0
     hooks:
       - id: snitch
 ```
