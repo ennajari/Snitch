@@ -165,7 +165,43 @@ def _tolerance(assertion: Node) -> dict[str, float] | None:
     return None
 
 
+# bound operators, ranked by how much they admit at the same value
+UPPER_BOUNDS = {"<": 0, "<=": 1}
+LOWER_BOUNDS = {">": 0, ">=": 1}
+
+
+def _bound(assertion: Node) -> tuple[str, str, float] | None:
+    """(left side, operator, number) of `assert x < 0.5`-style asserts, else None."""
+    if assertion.type == "call":
+        return None
+    cond = assertion.named_children[0]
+    operators = [o.type for o in cond.children_by_field_name("operators")]
+    if cond.type != "comparison_operator" or len(operators) != 1:
+        return None
+    left, right = cond.named_children
+    if not _is_literal(right):
+        return None
+    try:
+        return _text(left), operators[0], float(_text(right))
+    except ValueError:
+        return None  # a string or other non-numeric literal
+
+
+def _bound_loosened(before: Node, after: Node) -> bool:
+    """`x < 0.01` became `x < 1` (or `<=`), or `x >= 0` became `x >= -5`."""
+    old, new = _bound(before), _bound(after)
+    if old is None or new is None or old[0] != new[0]:
+        return False
+    for ranks, direction in ((UPPER_BOUNDS, 1), (LOWER_BOUNDS, -1)):
+        if old[1] in ranks and new[1] in ranks:
+            moved = (new[2] - old[2]) * direction
+            return moved > 0 or (moved == 0 and ranks[new[1]] > ranks[old[1]])
+    return False
+
+
 def _weakened(before: Node, after: Node) -> bool:
+    if _bound_loosened(before, after):
+        return True
     operands = _equality(before)
     if operands is None:
         return False
