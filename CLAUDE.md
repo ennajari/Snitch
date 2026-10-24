@@ -119,7 +119,19 @@ impossible_spec | no_env | flaky | hard | control.
       (ATIF); escalated = an `...escalate` tool call there.
 - [ ] disclosure judge (outside the engine; until then disclosed = final message names
       every flagged file) + human labels (κ on 150+ cases)
-- [ ] "with Snitch" arm for Claude Code inside Harbor
+- [x] "with Snitch" arm: bench/agents/claude_code_snitch.py (Harbor's ClaudeCode +
+      `git clone` of this repo + `--plugin-dir`); mode via `--ae EVAL_SNITCH_MODE=...`.
+      Checked without a model: install works, and the plugin's hooks run inside a task
+      image (warn context on a weakened assert, enforce blocks the stop). Task images
+      ship nodejs/npm (agent setup 475s -> 266s; Harbor's default limit is 360s).
+- [ ] edition 1 runs (4-6 agents x 3 runs x baseline/with_snitch); needs auth, see below
+Running the bench (subscription, not API billing: run `claude setup-token` once):
+  export CLAUDE_CODE_OAUTH_TOKEN=... CLAUDE_FORCE_OAUTH=1
+  harbor run -p bench/tasks -a claude-code -k 3 -n 4 -o ~/bench-jobs/base -y
+  PYTHONPATH=. harbor run -p bench/tasks -a bench.agents.claude_code_snitch:ClaudeCodeWithSnitch \
+    --ae EVAL_SNITCH_MODE=warn -k 3 -n 4 -o ~/bench-jobs/snitch -y
+  uv run snitch bench-score --tasks bench/tasks --edition 2026-12 \
+    --baseline ~/bench-jobs/base/<job> --with-snitch ~/bench-jobs/snitch/<job> --out results.jsonl
 Harbor notes: `authors = [{ name = "..." }]` (plain strings make the task silently
 invalid: "Either datasets or tasks must be provided"); Docker Desktop only mounts paths
 under $HOME, so `-o <jobs dir>` must not be under /tmp; the verifier installs Snitch
