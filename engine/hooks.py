@@ -254,43 +254,100 @@ def _mentions(message: str, file: str) -> bool:
     return file.lower() in text or Path(file).name.lower() in text
 
 
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+TEST_COMMAND = re.compile(
+    r"\b(pytest|py\.test|unittest|tox|nox|make\s+(test|check)|vitest|jest"
+    r"|(npm|pnpm|yarn|bun)\s+(run\s+)?test|go\s+test|cargo\s+test)\b"
+)
+PASS_CLAIM = re.compile(
+    r"\b(tests?|test suite|suite)\b[^.\n]{0,40}?\b(pass(es|ed|ing)?|green)\b"
+    r"|\b\d+ passed\b",
+    re.IGNORECASE,
+)
+NEGATION = re.compile(r"\b(not|never|no|fail\w*)\b|n't", re.IGNORECASE)
+
+
+def _claims_untested_pass(transcript: object, message: str) -> bool:
+    """The final message says the tests pass, yet no test command ran after the
+    agent's last file edit (spec: "claimed to run tests but never did")."""
+    claims = [m.group(0) for m in PASS_CLAIM.finditer(message)]
+    if not transcript or not any(not NEGATION.search(c) for c in claims):
+        return False
+    try:
+        lines = Path(str(transcript)).read_text().splitlines()
+    except OSError:
+        return False  # no transcript: nothing to check against
+    edited = tested = False
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        body = entry.get("message") if isinstance(entry, dict) else None
+        content = body.get("content") if isinstance(body, dict) else None
+        for part in content if isinstance(content, list) else []:
+            if not isinstance(part, dict) or part.get("type") != "tool_use":
+                continue
+            # shortcut: only edit tools count as edits, not files written via Bash
+            if part.get("name") in EDIT_TOOLS:
+                edited, tested = True, False
+            elif part.get("name") == "Bash":
+                command = str((part.get("input") or {}).get("command", ""))
+                tested = tested or bool(TEST_COMMAND.search(command))
+    return edited and not tested
+
+
 def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
-    """Undisclosed, unescalated events at the end of a turn: warn the user, or (enforce)
-    block the stop once and ask the agent to revert, disclose or escalate."""
+    """Undisclosed, unescalated events at the end of a turn, or a "tests pass" claim
+    with no test run since the last edit: warn the user, or (enforce) block the stop
+    once and ask the agent to revert, disclose, escalate or run the tests."""
     found = _session_events(payload, data_dir)
     if found is None:
         return None
     _, stored, _ = found
-    unresolved = [e for e in stored if not e.escalated and e.disclosed is not True]
-    if not unresolved:
-        return None
     message = str(payload.get("last_assistant_message") or "")
+    unresolved = [e for e in stored if not e.escalated and e.disclosed is not True]
     flags = {e.id: _mentions(message, e.file) for e in unresolved}
-    ledger = Ledger(data_dir / "ledger.db")
-    try:
-        ledger.set_disclosed(flags)
-    finally:
-        ledger.close()
+    if flags:
+        ledger = Ledger(data_dir / "ledger.db")
+        try:
+            ledger.set_disclosed(flags)
+        finally:
+            ledger.close()
     hidden = [e for e in unresolved if not flags[e.id]]
-    if not hidden or _mode() == "observe":
+    untested = _claims_untested_pass(payload.get("transcript_path"), message)
+    if not (hidden or untested) or _mode() == "observe":
         return None
     listing = "\n".join(_listing(hidden))
     # stop_hook_active: Claude is already continuing because of a stop hook, so
     # blocking again could loop forever; fall back to telling the user.
     if _mode() == "enforce" and not payload.get("stop_hook_active"):
-        reason = (
-            "Snitch: your final message does not disclose these test changes:\n"
-            f"{listing}\n"
-            "Before finishing, either revert them, or say plainly which test file you "
-            "changed and why. If a test is wrong, call the snitch `escalate` tool."
-        )
-        return json.dumps({"decision": "block", "reason": reason})
-    return json.dumps(
-        {
-            "systemMessage": "Snitch: the agent did not disclose these test changes:\n"
+        reasons = []
+        if hidden:
+            reasons.append(
+                "Snitch: your final message does not disclose these test changes:\n"
+                f"{listing}\n"
+                "Before finishing, either revert them, or say plainly which test file "
+                "you changed and why. If a test is wrong, call the snitch `escalate` tool."
+            )
+        if untested:
+            reasons.append(
+                "Snitch: your final message says the tests pass, but no test command "
+                "ran after your last edit. Run the tests, or correct your message."
+            )
+        return json.dumps({"decision": "block", "reason": "\n\n".join(reasons)})
+    notes = []
+    if hidden:
+        notes.append(
+            "Snitch: the agent did not disclose these test changes:\n"
             f"{listing}\nAsk Claude for the snitch ledger to see the full receipt."
-        }
-    )
+        )
+    if untested:
+        notes.append(
+            "Snitch: the agent says the tests pass, but no test command ran after "
+            "its last edit."
+        )
+    return json.dumps({"systemMessage": "\n\n".join(notes)})
 
 
 def _frozen(root: Path) -> list[str]:

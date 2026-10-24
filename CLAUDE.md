@@ -70,6 +70,9 @@ now; proper packaging decided at publish time.
       user; enforce: `decision: block` with a reason, but never when `stop_hook_active`
       (falls back to the user warning). Receipt headings show escalated / disclosed /
       not disclosed. SessionStart drops other sessions untouched for 14 days. (11 tests)
+      Also flags a "tests pass" claim when the transcript (`transcript_path`) shows no
+      test command after the last Edit/Write (spec: claimed to run tests but never did);
+      not a ledger event yet, and edits made through Bash do not count. (+8 tests)
 - [x] 6. PreToolUse gate — `snitch hook pre-tool` on Edit|Write|MultiEdit|Bash, enforce
       mode only: denies edits to paths matching `frozen = [globs]` in the repo's
       `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` on

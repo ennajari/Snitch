@@ -172,6 +172,7 @@ Exit codes: `0` clean, `1` events found, `2` usage error.
 | evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` |
 | faking | `test_env_special_casing` |
 | hollow | `broad_except_pass` |
+| reporting (plugin, at the end of a turn) | a flagged test change the final message does not mention; "tests pass" claimed with no test run since the last edit |
 
 Every detector is a pure function of (before, after) and is tested on a cheating
 fixture and a legitimate one that must stay silent. Snitch flags changes; whether a

@@ -268,6 +268,7 @@ def stop(
     message: str,
     mode: str | None = None,
     active: bool = False,
+    transcript: Path | None = None,
 ) -> object:
     payload = {
         "session_id": "s1",
@@ -276,6 +277,8 @@ def stop(
         "stop_hook_active": active,
         "last_assistant_message": message,
     }
+    if transcript:
+        payload["transcript_path"] = str(transcript)
     env = {"CLAUDE_PLUGIN_DATA": str(data)}
     if mode:
         env["CLAUDE_PLUGIN_OPTION_MODE"] = mode
@@ -379,6 +382,76 @@ def test_stop_on_a_clean_session_is_silent(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
+
+
+def transcript(path: Path, *tools: tuple[str, dict[str, str]]) -> Path:
+    """A session transcript (JSONL) with one assistant tool call per line."""
+    lines = [json.dumps({"type": "user", "message": {"content": "fix it"}})]
+    lines += [
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "tool_use", "name": name, "input": args}]
+                },
+            }
+        )
+        for name, args in tools
+    ]
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+EDIT = ("Edit", {"file_path": "calc.py"})
+PYTEST = ("Bash", {"command": "cd repo && .venv/bin/python -m pytest -q"})
+
+
+@pytest.mark.parametrize(
+    ("tools", "message", "flagged"),
+    [
+        ([EDIT], SILENT, True),
+        ([PYTEST, EDIT], "Fixed; the test suite passes.", True),
+        ([EDIT, PYTEST], SILENT, False),
+        ([EDIT], "I fixed add(). I could not run the tests here.", False),
+        ([EDIT], "The tests do not pass yet: 1 failed.", False),
+        ([PYTEST], SILENT, False),  # no edit: nothing new to test
+    ],
+)
+def test_stop_flags_a_pass_claim_without_a_test_run(
+    tmp_path: Path, tools: list[tuple[str, dict[str, str]]], message: str, flagged: bool
+) -> None:
+    data, repo = agent_session(tmp_path, "legit_assert_added")
+    log = transcript(tmp_path / "t.jsonl", *tools)
+
+    result = stop(data, repo, message, transcript=log)
+
+    assert result.exit_code == 0, result.output
+    if flagged:
+        assert "no test command" in json.loads(result.stdout)["systemMessage"]
+    else:
+        assert result.stdout == ""
+
+
+def test_stop_enforce_blocks_an_untested_pass_claim(tmp_path: Path) -> None:
+    data, repo = agent_session(tmp_path, "legit_assert_added")
+    log = transcript(tmp_path / "t.jsonl", EDIT)
+
+    blocked = stop(data, repo, SILENT, mode="enforce", transcript=log)
+    again = stop(data, repo, SILENT, mode="enforce", active=True, transcript=log)
+
+    assert json.loads(blocked.stdout)["decision"] == "block"
+    assert "Run the tests" in json.loads(blocked.stdout)["reason"]
+    assert "no test command" in json.loads(again.stdout)["systemMessage"]
+
+
+def test_stop_reports_both_problems(tmp_path: Path) -> None:
+    data, repo = agent_session(tmp_path, "assertion_weakened_in")
+    log = transcript(tmp_path / "t.jsonl", EDIT)
+
+    result = stop(data, repo, SILENT, mode="enforce", transcript=log)
+
+    reason = json.loads(result.stdout)["reason"]
+    assert "test_calc.py:9" in reason and "Run the tests" in reason
 
 
 def test_session_start_drops_stale_sessions(tmp_path: Path, repo: Path) -> None:
