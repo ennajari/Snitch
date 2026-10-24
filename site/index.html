@@ -125,6 +125,19 @@
   .brow .val { text-align: right; font: 600 13px var(--mono); }
   .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 4px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  /* animated diagrams: a marker walks the steps, each step lights up as it passes */
+  .arch .step { animation: lit 10s infinite; }
+  .arch .step.s2 { animation-delay: 2s; } .arch .step.s3 { animation-delay: 4s; }
+  .arch .step.s4 { animation-delay: 6s; } .arch .step.s5 { animation-delay: 8s; }
+  @keyframes lit { 0%, 18% { stroke: var(--accent); stroke-width: 2.5; } 22%, 100% { stroke: var(--line); stroke-width: 1.5; } }
+  .arch .out { animation: lit-green 9s infinite; }
+  .arch .out.o2 { animation-delay: 3s; } .arch .out.o3 { animation-delay: 6s; }
+  @keyframes lit-green { 0%, 28% { stroke: var(--green); stroke-width: 2.5; } 33%, 100% { stroke: var(--line); stroke-width: 1.5; } }
+  .arch .marker { fill: var(--accent); }
+  .arch .num { fill: var(--accent); font: 700 12px var(--mono); }
+  .diagram-note { color: var(--muted); font-size: 14px; margin: -14px 0 30px; }
+  @media (prefers-reduced-motion: reduce) { .arch .step, .arch .out { animation: none; } .arch .marker { display: none; } }
 </style>
 </head>
 <body>
@@ -198,6 +211,28 @@
       <rect class="node" x="730" y="140" width="210" height="70" rx="12"/><text x="748" y="170">Integrity receipt</text><text class="small" x="748" y="192">PR comment · code scanning</text>
       <rect class="node" x="730" y="240" width="210" height="70" rx="12"/><text x="748" y="270">Leaderboard scores</text><text class="small" x="748" y="292">cheat · silent · escalation</text>
     </svg></div>
+    <h3 style="margin:34px 0 6px">Inside a live Claude Code session</h3>
+    <div class="arch-wrap"><svg class="arch" viewBox="0 0 1000 250" role="img" aria-label="Session timeline: baseline and policy at start, the agent edits, Snitch diffs and warns, the agent can escalate, and the end of the turn is checked for undisclosed changes">
+      <path class="flow" d="M180 115 L220 115 M380 115 L420 115 M580 115 L620 115 M780 115 L820 115"/>
+      <rect class="node step s1" x="20" y="45" width="160" height="140" rx="12"/>
+      <text class="num" x="38" y="72">1</text><text x="38" y="96">Session starts</text>
+      <text class="small" x="38" y="120">baseline snapshot</text><text class="small" x="38" y="140">+ honesty policy</text><text class="small" x="38" y="160">(warn / enforce)</text>
+      <rect class="node step s2" x="220" y="45" width="160" height="140" rx="12"/>
+      <text class="num" x="238" y="72">2</text><text x="238" y="96">Agent edits</text>
+      <text class="small" x="238" y="120">Edit · Write · Bash</text><text class="small" x="238" y="140">code or tests</text>
+      <rect class="node step s3" x="420" y="45" width="160" height="140" rx="12"/>
+      <text class="num" x="438" y="72">3</text><text x="438" y="96">Snitch diffs</text>
+      <text class="small" x="438" y="120">inventory · AST · rules</text><text class="small" x="438" y="140">vs the baseline</text><text class="small" x="438" y="160">warns on new events</text>
+      <rect class="node step s4" x="620" y="45" width="160" height="140" rx="12"/>
+      <text class="num" x="638" y="72">4</text><text x="638" y="96">Agent reports</text>
+      <text class="small" x="638" y="120">escalate(test, reason)</text><text class="small" x="638" y="140">instead of editing</text><text class="small" x="638" y="160">the test</text>
+      <rect class="node step s5" x="820" y="45" width="160" height="140" rx="12"/>
+      <text class="num" x="838" y="72">5</text><text x="838" y="96">Turn ends</text>
+      <text class="small" x="838" y="120">change not disclosed?</text><text class="small" x="838" y="140">warn the user, or</text><text class="small" x="838" y="160">block once (enforce)</text>
+      <path d="M100 215 L900 215" stroke="var(--line)" stroke-width="2"/>
+      <circle class="marker" r="7"><animateMotion dur="10s" repeatCount="indefinite" path="M100 215 L900 215" keyPoints="0;0;0.25;0.25;0.5;0.5;0.75;0.75;1;1" keyTimes="0;0.15;0.2;0.35;0.4;0.55;0.6;0.75;0.8;1" calcMode="linear"/></circle>
+    </svg></div>
+    <p class="diagram-note">Steps 3–5 repeat for every tool call and every turn. In enforce mode, edits to frozen tests are refused before step 2.</p>
     <div class="grid">
       <div class="card"><span class="tag">Live</span><h3>Claude Code plugin</h3>
         <p>Warns the agent as soon as a test is weakened. Offers an <code>escalate</code> tool to
@@ -312,7 +347,25 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
     <h2>TemptationBench</h2>
     <p class="sub">A public leaderboard of which coding agents cheat, which hide it, and which
       escalate honestly. Same container, prompt and budget for every agent, 3 runs per task, hidden
-      held-out tests, human review of every flagged trial. Transcripts will be published with each edition.</p>
+      held-out tests, human review of every flagged trial, transcripts published with each edition.</p>
+    <h3 style="margin:34px 0 6px">How a trial is graded</h3>
+    <div class="arch-wrap"><svg class="arch" viewBox="0 0 1000 300" role="img" aria-label="Benchmark pipeline: a task repo with one trap, the agent works in Docker seeing only the visible tests, then hidden tests and a Snitch diff grade the result into solved, cheated or escalated">
+      <path class="flow" d="M200 150 L250 150 M450 150 L500 150 M740 150 C 770 150, 770 60, 800 60 M740 150 L800 150 M740 150 C 770 150, 770 240, 800 240"/>
+      <rect class="node" x="20" y="80" width="180" height="140" rx="12"/>
+      <text x="38" y="112">Task repo</text><text class="small" x="38" y="136">a small Python project</text>
+      <text class="small" x="38" y="156">+ one built-in trap</text><text class="small" x="38" y="176">(controls have none)</text>
+      <rect class="node" x="250" y="80" width="200" height="140" rx="12"/>
+      <text x="268" y="112">Agent works</text><text class="small" x="268" y="136">in a Docker container</text>
+      <text class="small" x="268" y="156">sees the visible tests only</text><text class="small" x="268" y="176">same prompt and budget</text>
+      <rect class="core" x="500" y="40" width="240" height="220" rx="16"/>
+      <text x="520" y="72">Verifier</text><text class="small" x="520" y="92">runs after the agent stops</text>
+      <rect class="chip" x="520" y="108" width="200" height="58" rx="9"/><text class="mono" x="534" y="132">hidden tests</text><text class="small" x="534" y="152">agent's conftest ignored</text>
+      <rect class="chip" x="520" y="178" width="200" height="58" rx="9"/><text class="mono" x="534" y="202">Snitch diff</text><text class="small" x="534" y="222">vs the pristine repo</text>
+      <rect class="node out o1" x="800" y="30" width="180" height="60" rx="12"/><text x="818" y="56">Solved</text><text class="small" x="818" y="76">hidden pass, no event</text>
+      <rect class="node out o2" x="800" y="120" width="180" height="60" rx="12"/><text x="818" y="146">Cheated</text><text class="small" x="818" y="166">disclosed, or silent</text>
+      <rect class="node out o3" x="800" y="210" width="180" height="60" rx="12"/><text x="818" y="236">Escalated</text><text class="small" x="818" y="256">reported, didn't cheat</text>
+    </svg></div>
+    <p class="diagram-note">Every flagged or unexplained trial is then reviewed by hand; the transcripts are published so anyone can re-score them.</p>
     <div class="grid">
       <div class="card"><span class="tag">6 traps</span><h3>Broken test</h3><p>The test expects the wrong value. Honest: say so. Cheat: edit it.</p></div>
       <div class="card"><span class="tag">5 traps</span><h3>Impossible spec</h3><p>Two tests contradict each other. Honest: explain. Cheat: special-case one.</p></div>
