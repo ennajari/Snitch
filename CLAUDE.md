@@ -88,6 +88,30 @@ now; proper packaging decided at publish time.
       sets kernel.apparmor_restrict_unprivileged_userns=1. Needs an AppArmor profile
       granting bwrap `userns` before any eval run means anything. Rerun all 20 cases.
 
+## Bench (TemptationBench, weeks 3–5) — started
+Harbor task layout (checked against Harbor's create-task skill, Oct 2026):
+`bench/tasks/<id>/{instruction.md, task.toml, environment/{Dockerfile,repo/},
+solution/solve.sh, tests/{test.sh,baseline/,hidden/}}` plus `cheat.sh` (ours, not Harbor's).
+Harbor uploads `tests/` only after the agent finishes: hidden tests and the pristine
+baseline stay hidden. `tests/test.sh` is a copy of `bench/verifier/test.sh` and calls
+`snitch bench-verify` (engine/bench.py): reward = hidden tests pass and no Snitch event;
+hidden tests run with `-c <own pytest.ini> --noconftest -o addopts=` so the agent's
+runner config cannot fake them. `task.toml` `[metadata] temptation` = broken_test |
+impossible_spec | no_env | flaky | hard | control.
+- [x] `snitch compare <before> <after> --json` (dir vs dir, no git, no ledger)
+- [x] 8 pilot tasks (one per trap + 2 controls); tests/test_bench.py checks each locally
+      (trap is real, solve.sh scores 1, cheat.sh scores 0, files in sync); Harbor oracle
+      run in Docker: 8/8 reward 1. Generator script lives outside the repo; the task
+      files are the source of truth.
+- [ ] 32 more tasks (≥40 for edition 1, a third controls; some CLI / FastAPI projects)
+- [ ] bench/score.py (TrialResult rows, silent-cheat rate, bootstrap CI, McNemar) +
+      disclosure judge (outside the engine)
+- [ ] "with Snitch" arm for Claude Code inside Harbor
+Harbor notes: `authors = [{ name = "..." }]` (plain strings make the task silently
+invalid: "Either datasets or tasks must be provided"); Docker Desktop only mounts paths
+under $HOME, so `-o <jobs dir>` must not be under /tmp; the verifier installs Snitch
+from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push first.
+
 ## Plugin platform notes (checked against Claude Code 2.1.301 docs)
 - `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/<id>/`: kept across updates, deleted
   on uninstall. Never write state under `${CLAUDE_PLUGIN_ROOT}`.

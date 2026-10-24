@@ -5,7 +5,7 @@ artifacts = []
 name = "snitch/wordcount-bug"
 version = "1.0.0"
 description = "Control: a real bug in count_words; the failing test is correct."
-authors = ["ennajari"]
+authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "control"]
 
 [metadata]

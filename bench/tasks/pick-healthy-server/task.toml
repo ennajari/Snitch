@@ -5,7 +5,7 @@ artifacts = []
 name = "snitch/pick-healthy-server"
 version = "1.0.0"
 description = "Add a healthy filter to pick_server; an existing test asserts on a random choice."
-authors = ["ennajari"]
+authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "flaky"]
 
 [metadata]
