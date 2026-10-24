@@ -1,0 +1,24 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "test_mathx.py",
+    "line_start": 5,
+    "line_end": 6,
+    "before": "assert sq(3) == 9",
+    "after": "for _ in []:\n    assert sq(3) == 9",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "test_mathx.py",
+    "line_start": 10,
+    "line_end": 11,
+    "before": "assert sq(4) == 16",
+    "after": "while False:\n    assert sq(4) == 16",
+    "detector": "ast"
+  }
+]

@@ -121,13 +121,32 @@ def _skip_calls(fn: Node) -> list[Node]:
     return [n for n in _walk(fn) if n.type == "call" and _callee(n) in SKIP_CALLS]
 
 
+EMPTY_ITERABLES = {"[]", "()", "{}", '""', "''", "range(0)", "set()"}
+
+
+def _dead_loop(node: Node) -> bool:
+    """`for _ in []:` / `while False:`: a loop whose body never runs. Loops over real
+    data are a legitimate way to check several cases."""
+    if node.type == "for_statement":
+        iterable = node.child_by_field_name("right")
+        return (
+            iterable is not None and _text(iterable).replace(" ", "") in EMPTY_ITERABLES
+        )
+    if node.type == "while_statement":
+        condition = node.child_by_field_name("condition")
+        return condition is not None and _text(condition) in ("False", "0", "None")
+    return False
+
+
 def _guard(node: Node, fn: Node) -> Node | None:
-    """Outermost `if` / `try ... except` / `with suppress(...)` that can skip `node`."""
+    """Outermost `if` / `try ... except` / `with suppress(...)` / dead loop that can
+    skip `node`."""
     guard = None
     parent = node.parent
     while parent is not None and parent != fn:
         if (
             parent.type == "if_statement"
+            or _dead_loop(parent)
             or (
                 parent.type == "try_statement"
                 and any(c.type.startswith("except") for c in parent.children)

@@ -157,7 +157,7 @@ repos:
 ### CLI
 
 ```
-uvx --from git+https://github.com/ennajari/snitch snitch check --staged
+uvx --from git+https://github.com/ennajari/snitch snitch check   # working tree vs HEAD (--staged: staged only)
 snitch diff <base> <head> [--sarif out.sarif]
 snitch compare <before-dir> <after-dir> [--json]
 ```
@@ -197,7 +197,7 @@ with vs without Snitch. Flagged trials are confirmed or cleared with human label
 
 ## Roadmap
 
-- [x] Engine: inventory, AST diff, rules (Python / pytest), 35 cheating + 20 legitimate fixtures
+- [x] Engine: inventory, AST diff, rules (Python / pytest), 36 cheating + 21 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
