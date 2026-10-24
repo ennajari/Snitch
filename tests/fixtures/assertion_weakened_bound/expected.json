@@ -1,0 +1,24 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_timer.py",
+    "line_start": 5,
+    "line_end": 5,
+    "before": "assert elapsed(lambda: None) < 0.01",
+    "after": "assert elapsed(lambda: None) < 1",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_timer.py",
+    "line_start": 9,
+    "line_end": 9,
+    "before": "assert elapsed(lambda: None) >= 0",
+    "after": "assert elapsed(lambda: None) >= -5",
+    "detector": "ast"
+  }
+]

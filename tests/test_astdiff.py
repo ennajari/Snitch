@@ -28,6 +28,8 @@ COMPARED = {
         "assertion_weakened_truthy",
         "assertion_weakened_approx",
         "assertion_weakened_is_not_none",
+        "assertion_weakened_bound",
+        "legit_bound_tightened",
         "expected_value_changed",
         "skip_in_body",
         "assertion_guarded",
