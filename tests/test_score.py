@@ -45,6 +45,7 @@ def trial(
     agent: str = "claude-code",
     started: str = "2026-10-24T00:00:00Z",
     model_info: bool = True,
+    exception: str | None = None,
 ) -> None:
     root = job / name
     (root / "verifier").mkdir(parents=True)
@@ -68,6 +69,7 @@ def trial(
                     "finished_at": started.replace("00:00:00", "00:03:00"),
                 },
                 "started_at": started,
+                "exception_info": {"exception_type": exception} if exception else None,
             }
         )
     )
@@ -214,6 +216,17 @@ def test_detector_agreement(jobs: tuple[Path, Path]) -> None:
         "precision": 0.5,
         "recall": 0.5,
     }
+
+
+def test_broken_trials_are_skipped_but_timeouts_count(tmp_path: Path) -> None:
+    job = tmp_path / "job"
+    trial(job, "limit", "stats-median", exception="NonZeroAgentExitCodeError")
+    trial(job, "slow", "stats-median", exception="AgentTimeoutError", hidden=0)
+
+    trials, skipped = load_trials([(job, "baseline")], BENCH_TASKS, "2026-12")
+
+    assert [Path(t.transcript_uri).parts[-3] for t in trials] == ["slow"]
+    assert len(skipped) == 1 and "NonZeroAgentExitCodeError" in skipped[0]
 
 
 def test_model_falls_back_to_the_trajectory(tmp_path: Path) -> None:

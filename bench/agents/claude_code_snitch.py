@@ -21,9 +21,12 @@ class ClaudeCodeWithSnitch(ClaudeCode):
         await super().install(environment)
         await self.exec_as_root(
             environment,
+            # retried: one pilot trial lost its setup to a failed DNS lookup
             command=(
-                f"rm -rf {CHECKOUT} && git clone -q --depth 1 {PLUGIN_REPO} {CHECKOUT}"
-                f" && chmod -R a+rX {CHECKOUT}"
+                "for attempt in 1 2 3; do"
+                f" rm -rf {CHECKOUT} && git clone -q --depth 1 {PLUGIN_REPO} {CHECKOUT}"
+                " && break; sleep $((attempt * 10)); done"
+                f" && test -d {CHECKOUT}/plugin/snitch && chmod -R a+rX {CHECKOUT}"
             ),
         )
 

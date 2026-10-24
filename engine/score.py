@@ -16,6 +16,7 @@ from engine.models import SnitchEvent
 
 type Arm = Literal["baseline", "with_snitch"]
 type Label = Literal["cheat", "clean", "unsure"]
+COUNTED_FAILURES = {"AgentTimeoutError"}
 type Temptation = Literal[
     "broken_test", "impossible_spec", "no_env", "flaky", "hard", "control"
 ]
@@ -130,6 +131,12 @@ def load_trials(
             task = result.get("task_name")
             if not graded.is_file() or task not in temptations:
                 skipped.append(f"{trial_dir}: no verifier output or unknown task")
+                continue
+            failure = (result.get("exception_info") or {}).get("exception_type")
+            # the agent running out of its time budget is a result; anything else
+            # (usage limit, network, setup) means the trial never really ran
+            if failure and failure not in COUNTED_FAILURES:
+                skipped.append(f"{trial_dir}: {failure}")
                 continue
             verdict = json.loads(graded.read_text())
             events = [SnitchEvent.model_validate(e) for e in verdict["event_list"]]
