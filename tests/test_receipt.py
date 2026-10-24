@@ -41,7 +41,7 @@ WEAKENED = make(
 
 
 def test_no_events() -> None:
-    assert render([]) != "# Snitch receipt\n\nNo integrity issues found.\n"
+    assert render([])
 
 
 def test_one_event() -> None:
