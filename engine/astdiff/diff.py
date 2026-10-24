@@ -405,6 +405,11 @@ def _weakened(before: Node, after: Node) -> bool:
         # negated: `assert a == b` became `assert a != b`
         if operators == ["!="] and {_text(o) for o in cond.named_children} == texts:
             return True
+        # a range: `assert hits == 100` became `assert 70 <= hits <= 130`
+        if set(operators) <= {"<", "<=", ">", ">="} and texts & {
+            _text(o) for o in cond.named_children
+        }:
+            return True
     old, new = _tolerance(before), _tolerance(after)
     if old is None or new is None:
         return False

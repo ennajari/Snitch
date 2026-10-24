@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_sampling.py",
+    "line_start": 9,
+    "line_end": 9,
+    "before": "assert hits == 100",
+    "after": "assert 70 <= hits <= 130",
+    "detector": "ast"
+  }
+]
