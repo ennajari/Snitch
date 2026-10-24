@@ -141,12 +141,15 @@ impossible_spec | no_env | flaky | hard | control.
       image (warn context on a weakened assert, enforce blocks the stop). Task images
       ship nodejs/npm (agent setup 475s -> 266s; Harbor's default limit is 360s).
 - [x] edition 2026-11, Claude Code only (bench/results/2026-11/): 240 trials, all ran;
-      14/120 trials changed a test without Snitch, 0/120 with (McNemar p = 0.0001; per
-      task 6 -> 0), all 14 disclosed (silent 0 both arms), 51/78 trap trials escalated,
+      18/120 trials changed a test without Snitch (corrected from 14 after a second
+      review pass), 0/120 with (McNemar p = 0.000008; per task 8 -> 0), all 18 disclosed (silent 0 both arms), 51/78 trap trials escalated,
       0 false alarms on controls. Hand review fixed two tasks whose hidden tests asked
       more than the instruction (json-path, url-query-params -> 1.1.0, rerun). Task
       images preinstall Claude Code 2.1.310; the Snitch MCP server sets alwaysLoad.
-- [ ] more agents (Codex CLI, Gemini CLI, OpenCode, ...): need their API keys + ToS check
+- [x] Codex CLI 0.164.0 (gpt-6.1-sol), 120 trials, not published yet (vendor preview):
+      57/78 trap trials changed or gamed the test, all acknowledged, none named the test.
+      Results only in ~/bench-jobs/2026-11 (labels.jsonl covers both agents).
+- [ ] Gemini CLI (pilot done; full run needs a cost OK), more agents
 - [ ] publish transcripts per edition
 Running the bench (subscription, not API billing: run `claude setup-token` once):
   export CLAUDE_CODE_OAUTH_TOKEN=... CLAUDE_FORCE_OAUTH=1
