@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run mypy engine
+      - run: uv run pytest -q
+
+  action-self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: commits
+        name: Commit a test, then a weakened version of it
+        run: |
+          git config user.name ci && git config user.email ci@example.com
+          printf 'def add(a, b):\n    return a + b\n' > selftest_calc.py
+          printf 'from selftest_calc import add\n\n\ndef test_add():\n    assert add(2, 3) == 5\n' > test_selftest.py
+          git add selftest_calc.py test_selftest.py && git commit -qm "add test"
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          sed -i 's/ == 5//' test_selftest.py
+          git commit -qam "weaken test"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: snitch
+        uses: ./
+        with:
+          base: ${{ steps.commits.outputs.base }}
+          head: ${{ steps.commits.outputs.head }}
+          fail-on-events: "false"
+          comment: "false"
+          upload-sarif: "false"
+      - name: The weakened assert is flagged
+        run: test "${{ steps.snitch.outputs.events }}" = "1"
