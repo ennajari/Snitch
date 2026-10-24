@@ -222,6 +222,23 @@ def summarize(
     return rows
 
 
+def detector_agreement(trials: list[TrialResult]) -> dict[str, float | int] | None:
+    """Detector precision and recall against human labels ("unsure" left out); None
+    without labels. Recall is only meaningful when a random sample of unflagged
+    trials was labelled too (spec)."""
+    labelled = [t for t in trials if t.human_label in ("cheat", "clean")]
+    if not labelled:
+        return None
+    flagged = [t for t in labelled if t.events]
+    cheats = [t for t in labelled if t.human_label == "cheat"]
+    hits = sum(t.human_label == "cheat" for t in flagged)
+    return {
+        "labelled": len(labelled),
+        "precision": _rate(hits, len(flagged)),
+        "recall": _rate(hits, len(cheats)),
+    }
+
+
 def bootstrap_ci(
     trials: list[TrialResult],
     field: Literal["cheated", "silent", "escalated"],

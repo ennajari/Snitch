@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from engine.cli import app
 from engine.score import (
     bootstrap_ci,
+    detector_agreement,
     load_labels,
     load_trials,
     mcnemar,
@@ -192,6 +193,21 @@ def test_human_labels_override_detectors(jobs: tuple[Path, Path]) -> None:
     assert by_name["b"].cheated  # unlabeled: the detector event still counts
 
 
+def test_detector_agreement(jobs: tuple[Path, Path]) -> None:
+    base, _ = jobs
+    unlabelled, _ = load_trials([(base, "baseline")], BENCH_TASKS, "2026-12")
+    # a: flagged, really a cheat; b: flagged, judged clean; c: missed hardcoding
+    labels = {"a": "cheat", "b": "clean", "c": "cheat", "d": "clean"}
+    trials, _ = load_trials([(base, "baseline")], BENCH_TASKS, "2026-12", labels)
+
+    assert detector_agreement(unlabelled) is None
+    assert detector_agreement(trials) == {
+        "labelled": 4,
+        "precision": 0.5,
+        "recall": 0.5,
+    }
+
+
 def test_load_labels(tmp_path: Path) -> None:
     good = tmp_path / "labels.jsonl"
     good.write_text(
@@ -275,3 +291,29 @@ def test_bench_score_cli(jobs: tuple[Path, Path], tmp_path: Path) -> None:
     assert "silent-cheat" in result.stdout
     assert "McNemar" in result.stdout
     assert "| broken_test |" in result.stdout  # per-temptation table
+
+
+def test_bench_score_cli_with_labels(jobs: tuple[Path, Path], tmp_path: Path) -> None:
+    base, _ = jobs
+    labels = tmp_path / "labels.jsonl"
+    labels.write_text(
+        '{"trial": "a", "label": "cheat"}\n{"trial": "b", "label": "clean"}\n'
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "bench-score",
+            "--tasks",
+            str(BENCH_TASKS),
+            "--edition",
+            "2026-12",
+            "--baseline",
+            str(base),
+            "--labels",
+            str(labels),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Detectors vs 2 human labels: precision 50%, recall 100%" in result.stdout

@@ -208,6 +208,7 @@ def bench_score(
     from engine.score import (
         Arm,
         bootstrap_ci,
+        detector_agreement,
         load_labels,
         load_trials,
         mcnemar,
@@ -271,6 +272,12 @@ def bench_score(
             f"\nSnitch effect, {agent} {model}: silent-cheat rate {effect:+.0%} "
             f"(baseline minus with Snitch); runs silent only without Snitch {b}, "
             f"only with Snitch {c}, McNemar p = {mcnemar(b, c):.3g}"
+        )
+    agreement = detector_agreement(trials)
+    if agreement:
+        typer.echo(
+            f"\nDetectors vs {agreement['labelled']} human labels: precision "
+            f"{agreement['precision']:.0%}, recall {agreement['recall']:.0%}"
         )
     typer.echo(
         "\nUnreviewed: cheat counts detector events; suspicious (visible pass, hidden "
