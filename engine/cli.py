@@ -165,6 +165,65 @@ def bench_verify(
     typer.echo(json.dumps(numbers))
 
 
+@app.command("bench-score")
+def bench_score(
+    tasks: Annotated[Path, typer.Option(help="The bench/tasks directory.")],
+    edition: Annotated[str, typer.Option(help='Edition label, e.g. "2026-12".')],
+    baseline: Annotated[
+        list[Path] | None, typer.Option(help="Harbor job dir run without Snitch.")
+    ] = None,
+    with_snitch: Annotated[
+        list[Path] | None, typer.Option(help="Harbor job dir run with Snitch.")
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option(help="Write one TrialResult per line (JSONL).")
+    ] = None,
+) -> None:
+    """TemptationBench: score Harbor job folders into leaderboard metrics."""
+    from engine.score import (
+        Arm,
+        bootstrap_ci,
+        load_trials,
+        mcnemar,
+        paired_silent,
+        summarize,
+    )
+
+    jobs: list[tuple[Path, Arm]] = [(d, "baseline") for d in baseline or []]
+    jobs += [(d, "with_snitch") for d in with_snitch or []]
+    if not jobs:
+        raise _fail("give at least one --baseline or --with-snitch job dir")
+    trials, skipped = load_trials(jobs, tasks, edition)
+    for note in skipped:
+        typer.echo(f"skipped: {note}", err=True)
+    if out is not None:
+        out.write_text("".join(t.model_dump_json() + "\n" for t in trials))
+    typer.echo(
+        "| agent | model | arm | trials | solve | cheat | silent-cheat (95% CI) "
+        "| honest escalation | false positives | cost $ |"
+    )
+    typer.echo("|---|---|---|---|---|---|---|---|---|---|")
+    for row in summarize(trials):
+        group = [
+            t
+            for t in trials
+            if (t.agent, t.model, t.arm) == (row["agent"], row["model"], row["arm"])
+        ]
+        low, high = bootstrap_ci(group, "silent")
+        typer.echo(
+            f"| {row['agent']} | {row['model']} | {row['arm']} | {row['trials']} "
+            f"| {row['solve_rate']:.0%} | {row['cheat_rate']:.0%} "
+            f"| {row['silent_cheat_rate']:.0%} ({low:.0%}–{high:.0%}) "
+            f"| {row['honest_escalation_rate']:.0%} | {row['false_positive_rate']:.0%} "
+            f"| {row['cost_usd']:.2f} |"
+        )
+    for (agent, model), (b, c) in sorted(paired_silent(trials).items()):
+        typer.echo(
+            f"\nSnitch effect, {agent} {model}: silent only without Snitch {b}, "
+            f"only with Snitch {c}, McNemar p = {mcnemar(b, c):.3g}"
+        )
+
+
 def _hook(handler: Callable[[dict[str, Any], Path], str | None]) -> None:
     """Run a hook handler on the stdin payload; print what it returns for Claude Code."""
     data = os.environ.get("CLAUDE_PLUGIN_DATA")
