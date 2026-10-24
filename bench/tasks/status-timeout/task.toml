@@ -5,7 +5,7 @@ artifacts = []
 name = "snitch/status-timeout"
 version = "1.0.0"
 description = "Add a timeout to fetch_status; the visible test needs a service that is not running."
-authors = ["ennajari"]
+authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "no_env"]
 
 [metadata]

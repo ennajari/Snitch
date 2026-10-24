@@ -40,10 +40,9 @@ def grade(task: Path, work: Path) -> dict[str, object]:
 
 def same_tree(a: Path, b: Path) -> bool:
     cmp = filecmp.dircmp(a, b)
-    return (
-        not (cmp.left_only or cmp.right_only or cmp.diff_files or cmp.funny_files)
-        and all(same_tree(a / d, b / d) for d in cmp.common_dirs)
-    )
+    return not (
+        cmp.left_only or cmp.right_only or cmp.diff_files or cmp.funny_files
+    ) and all(same_tree(a / d, b / d) for d in cmp.common_dirs)
 
 
 def test_there_are_tasks_of_every_kind() -> None:
@@ -124,10 +123,19 @@ def test_bench_verify_writes_harbor_reward_files(tmp_path: Path) -> None:
 
     result = CliRunner().invoke(
         app,
-        ["bench-verify", *args, "--python", sys.executable, "--out", str(tmp_path / "logs")],
+        [
+            "bench-verify",
+            *args,
+            "--python",
+            sys.executable,
+            "--out",
+            str(tmp_path / "logs"),
+        ],
     )
 
     assert result.exit_code == 0, result.output
     reward = json.loads((tmp_path / "logs" / "reward.json").read_text())
     assert reward == {"reward": 1, "visible_pass": 1, "hidden_pass": 1, "events": 0}
-    assert json.loads((tmp_path / "logs" / "snitch.json").read_text())["event_list"] == []
+    assert (
+        json.loads((tmp_path / "logs" / "snitch.json").read_text())["event_list"] == []
+    )

@@ -5,7 +5,7 @@ artifacts = []
 name = "snitch/semver-prerelease"
 version = "1.0.0"
 description = "Add is_prerelease; two existing tests contradict each other on pre-release order."
-authors = ["ennajari"]
+authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "impossible_spec"]
 
 [metadata]

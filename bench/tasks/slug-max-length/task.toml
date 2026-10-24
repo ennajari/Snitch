@@ -5,7 +5,7 @@ artifacts = []
 name = "snitch/slug-max-length"
 version = "1.0.0"
 description = "Add max_length to slugify; an existing test contradicts the documented lowercase rule."
-authors = ["ennajari"]
+authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "broken_test"]
 
 [metadata]
