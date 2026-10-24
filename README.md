@@ -232,8 +232,9 @@ and without the Snitch plugin; every flagged trial reviewed by hand
 Paired McNemar p = 0.000008 (per task: 8 → 0, p = 0.008). The 18 changes came from broken
 tests (10) and flaky tests (8), and every one was disclosed: Claude Code changed the
 test and said so, and on the broken tests it was right that the test was wrong. With
-Snitch it reported the problem instead of changing the test. One agent so far, so this
-is not yet a leaderboard; other agents are next.
+Snitch it reported the problem instead of changing the test. Codex CLI has been run
+on the same 120 trials; its results follow on 8 November 2026, after the 14-day vendor
+preview. Gemini CLI is being run.
 (Corrected from 14: a second review pass found 4 more, all disclosed; see the
 results page.)
 
@@ -244,7 +245,8 @@ results page.)
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
 - [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch, human-reviewed)
-- [ ] More agents for the leaderboard (Codex CLI, Gemini CLI, OpenCode, …)
+- [x] Codex CLI run and reviewed (results 8 November 2026, after the vendor preview)
+- [ ] Gemini CLI (running), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
 

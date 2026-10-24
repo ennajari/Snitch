@@ -73,7 +73,8 @@ kept out of the results. Two trials lost to Docker errors were rerun.
 
 ## Limits
 
-- One agent and one model so far; other agents are being run.
+- One agent published so far: Codex CLI has been run and reviewed and follows on
+  2026-11-08, after the vendor preview; Gemini CLI is being run.
 - What the with-Snitch arm measures is the whole plugin: the session-start policy, the
   `escalate` tool and the hooks. This edition does not separate their effects.
 - Disclosure was judged by hand here; the LLM judge and its agreement with human labels
