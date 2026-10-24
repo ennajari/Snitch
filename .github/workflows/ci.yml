@@ -46,3 +46,20 @@ jobs:
           upload-sarif: "false"
       - name: The weakened assert is flagged
         run: test "${{ steps.snitch.outputs.events }}" = "1"
+
+  # dogfooding: Snitch reviews this repo's own pull requests (report only: fixture
+  # and bench edits are cheats on purpose)
+  snitch:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./
+        with:
+          fail-on-events: "false"
