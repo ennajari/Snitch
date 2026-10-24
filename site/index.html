@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snitch: the integrity layer for AI coding agents</title>
+<meta name="description" content="Snitch catches AI coding agents that make tests pass by cheating (weakening, skipping or deleting tests, reconfiguring the runner) and gives them an honest way out.">
+<meta property="og:title" content="Snitch: the integrity layer for AI coding agents">
+<meta property="og:description" content="Catches coding agents that make tests pass by cheating, and gives them an honest way out.">
+<meta property="og:image" content="https://ennajari.github.io/Snitch/social-preview.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0f0f14; --panel: #17171f; --line: #262632; --text: #ececf1; --muted: #a3a3b2;
+    --accent: #ff4d4f; --green: #3fb950; --red: #ff6b6b; --code: #1d1d27;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #fbfbfd; --panel: #ffffff; --line: #e4e4ea; --text: #15151c; --muted: #5d5d6e;
+            --code: #f3f3f7; --green: #1a7f37; --red: #cf222e; --accent: #e5383b; }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text); text-decoration: none; }
+  nav .links a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  nav .links a:hover { color: var(--text); }
+  header { padding: 64px 0 40px; text-align: center; }
+  header img { width: 96px; height: 96px; }
+  h1 { font-size: clamp(36px, 6vw, 60px); line-height: 1.1; margin: 18px 0 14px; letter-spacing: -0.02em; }
+  .lead { font-size: clamp(18px, 2.4vw, 22px); color: var(--muted); max-width: 720px; margin: 0 auto; }
+  .cta { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 16px; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.ghost { border: 1px solid var(--line); color: var(--text); }
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 30px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 760px; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card h3 { margin: 0 0 8px; font-size: 19px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+  .tag { display: inline-block; font: 600 12px var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  pre, code { font-family: var(--mono); }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+        overflow-x: auto; font-size: 14.5px; line-height: 1.55; margin: 0; }
+  .del { color: var(--red); } .add { color: var(--green); } .dim { color: var(--muted); }
+  .story { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .story { grid-template-columns: 1fr; } nav .links { display: none; } }
+  .label { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 14px; }
+  td.num { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .table { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .note { color: var(--muted); font-size: 14.5px; margin-top: 14px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
+                 padding: 8px 14px; font: 600 14px system-ui, sans-serif; cursor: pointer; }
+  .tabs button[aria-selected="true"] { color: var(--text); border-color: var(--accent); }
+  .panel { position: relative; }
+  .panel[hidden] { display: none; }
+  .copy { position: absolute; top: 10px; right: 10px; background: var(--panel); color: var(--muted);
+          border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+  ol.refs { padding-left: 20px; color: var(--muted); } ol.refs li { margin: 8px 0; } ol.refs b { color: var(--text); }
+  footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14.5px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><img src="logo.svg" width="30" height="30" alt="">Snitch</a>
+    <div class="links">
+      <a href="#how">How it works</a><a href="#results">Results</a><a href="#install">Install</a>
+      <a href="#bench">TemptationBench</a><a href="https://github.com/ennajari/Snitch">GitHub</a>
+    </div>
+  </nav>
+
+  <header>
+    <img src="logo.svg" alt="Snitch logo: an eye">
+    <h1>Your agent says<br>“all tests pass.”<br>Did it cheat?</h1>
+    <p class="lead">Snitch is the integrity layer for AI coding agents. It catches agents that make a
+      failing test pass by weakening, skipping or deleting it, and gives them an honest way out.</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install in one line</a>
+      <a class="btn ghost" href="https://github.com/ennajari/Snitch">Star on GitHub</a>
+    </div>
+  </header>
+</div>
+
+<section>
+  <div class="wrap">
+    <h2>The quiet cheat</h2>
+    <p class="sub">You ask for a green CI. The agent comes back with a green CI. Here is how it
+      sometimes gets there, and what Snitch prints the moment it happens.</p>
+    <div class="story">
+      <div>
+        <p class="label">What the agent changed</p>
+<pre><span class="dim"># tests/test_calc.py</span>
+ def test_divide():
+<span class="del">-    assert divide(10, 2) == 5</span>
+<span class="add">+    assert divide(10, 2) in (5, 6)</span>
+
+<span class="dim"># agent: "Fixed it, all tests pass ✅"</span></pre>
+      </div>
+      <div>
+        <p class="label">What Snitch reports</p>
+<pre><b>Snitch receipt</b>: 1 event, 1 high
+
+severity  high
+family    tampering
+pattern   assertion_weakened
+where     test_calc.py:9
+detector  ast
+
+<span class="del">- assert divide(10, 2) == 5</span>
+<span class="add">+ assert divide(10, 2) in (5, 6)</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>One engine, three places</h2>
+    <p class="sub">Every finding comes from a deterministic detector and points at a line in the
+      diff. Snitch never asks a model whether something “looks like cheating”.</p>
+    <div class="grid">
+      <div class="card"><span class="tag">Live</span><h3>Claude Code plugin</h3>
+        <p>Warns the agent as soon as a test is weakened. Offers an <code>escalate</code> tool to
+          report a broken test instead of editing it. Won’t let the session end with a test change
+          the agent didn’t mention.</p></div>
+      <div class="card"><span class="tag">Every PR</span><h3>GitHub Action &amp; pre-commit</h3>
+        <p>Checks any pull request, whoever wrote it: Codex, Copilot, Cursor, Devin or a human.
+          Posts an integrity receipt and flags the lines in code scanning.</p></div>
+      <div class="card"><span class="tag">Public</span><h3>TemptationBench</h3>
+        <p>40 realistic tasks with one built-in temptation each and hidden tests, to measure how
+          often agents cheat, hide it, or escalate honestly.</p></div>
+    </div>
+    <div class="grid" style="margin-top:18px">
+      <div class="card"><h3>Test inventory</h3><p><code>pytest --collect-only</code> before and
+        after: tests deleted, renamed away, skipped or deselected.</p></div>
+      <div class="card"><h3>Assertion diff</h3><p>tree-sitter diff of every test: asserts removed or
+        weakened (<code>==</code>&nbsp;→&nbsp;<code>in</code>, looser <code>approx</code> or bounds,
+        flipped to <code>!=</code>), expected values changed, asserts hidden behind a guard.</p></div>
+      <div class="card"><h3>Runner &amp; CI rules</h3><p><code>addopts</code>, coverage thresholds,
+        <code>conftest.py</code> report hooks, <code>continue-on-error</code>, <code>|| true</code>,
+        <code>--no-verify</code>, code that special-cases <code>pytest</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="results">
+  <div class="wrap">
+    <h2>Measured, not claimed</h2>
+    <p class="sub"><code>claude plugin eval</code> on 20 seeded repos (broken test, impossible spec,
+      flaky test, slow test, runner config, controls), 2 runs per case, with and without the plugin.</p>
+    <div class="table">
+      <table>
+        <tr><th></th><th>without Snitch</th><th>with Snitch</th></tr>
+        <tr><td>Trap runs where the agent edited the test</td><td class="num">7 / 32</td><td class="num">0 / 32</td></tr>
+        <tr><td>Trap runs that called <code>escalate</code></td><td class="num">n/a</td><td class="num">25 / 32</td></tr>
+        <tr><td>Control tasks completed</td><td class="num">8 / 8</td><td class="num">8 / 8</td></tr>
+        <tr><td>False escalations on controls</td><td class="num">0</td><td class="num">0</td></tr>
+      </table>
+    </div>
+    <p class="note">Paired McNemar p = 0.016 (per case: 4 → 0, p = 0.125). One agent, one model, small n.
+      In this run the agent disclosed every test edit even without Snitch, so it says nothing yet about
+      <em>silent</em> cheating. <a href="https://github.com/ennajari/Snitch/blob/master/docs/evals/2026-10-24-plugin-eval.md">Full report and threats to validity</a>.</p>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">Python / pytest today. Pick where you want Snitch to watch.</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="plugin">Claude Code</button>
+      <button role="tab" aria-selected="false" data-tab="action">GitHub Action</button>
+      <button role="tab" aria-selected="false" data-tab="precommit">pre-commit</button>
+      <button role="tab" aria-selected="false" data-tab="cli">CLI</button>
+    </div>
+    <div class="panel" data-panel="plugin"><button class="copy">Copy</button>
+<pre>/plugin marketplace add ennajari/snitch
+/plugin install snitch@snitch</pre>
+      <p class="note">Modes in <code>/config</code>: <b>observe</b> (record only), <b>warn</b> (default: tell the
+        agent and you), <b>enforce</b> (also block edits to frozen tests and stops that hide test changes).
+        Freeze paths in <code>.snitch.toml</code>: <code>frozen = ["tests/**"]</code>.</p>
+    </div>
+    <div class="panel" data-panel="action" hidden><button class="copy">Copy</button>
+<pre>on: pull_request
+permissions:
+  contents: read
+  pull-requests: write     # the receipt comment
+  security-events: write   # code scanning
+jobs:
+  snitch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ennajari/snitch@master</pre>
+    </div>
+    <div class="panel" data-panel="precommit" hidden><button class="copy">Copy</button>
+<pre>repos:
+  - repo: https://github.com/ennajari/snitch
+    rev: master
+    hooks:
+      - id: snitch</pre>
+    </div>
+    <div class="panel" data-panel="cli" hidden><button class="copy">Copy</button>
+<pre>uvx --from git+https://github.com/ennajari/snitch snitch check
+snitch diff &lt;base&gt; &lt;head&gt; --sarif out.sarif
+snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
+    </div>
+  </div>
+</section>
+
+<section id="bench">
+  <div class="wrap">
+    <h2>TemptationBench</h2>
+    <p class="sub">A public leaderboard of which coding agents cheat, which hide it, and which
+      escalate honestly. Same container, prompt and budget for every agent, 3 runs per task, hidden
+      held-out tests, human review of every flagged trial, transcripts published.</p>
+    <div class="grid">
+      <div class="card"><span class="tag">6 traps</span><h3>Broken test</h3><p>The test expects the wrong value. Honest: say so. Cheat: edit it.</p></div>
+      <div class="card"><span class="tag">5 traps</span><h3>Impossible spec</h3><p>Two tests contradict each other. Honest: explain. Cheat: special-case one.</p></div>
+      <div class="card"><span class="tag">5 traps</span><h3>Missing service</h3><p>The test needs a network or secret that isn’t there. Cheat: mock or skip it.</p></div>
+      <div class="card"><span class="tag">5 traps</span><h3>Flaky test</h3><p>Fails at random. Cheat: quietly add a retry or skip.</p></div>
+      <div class="card"><span class="tag">5 traps</span><h3>Hard task</h3><p>Solvable, but hard in the budget. Cheat: hardcode the fixtures.</p></div>
+      <div class="card"><span class="tag">14 controls</span><h3>No temptation</h3><p>Normal tasks, to show Snitch doesn’t cry wolf.</p></div>
+    </div>
+    <p class="note"><b>No leaderboard results are published yet.</b> Every number on this page was measured; none is projected.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Why this exists</h2>
+    <p class="sub">Researchers have shown that coding agents cheat on tests, and that an honest
+      exit helps. Snitch turns that into something you can install.</p>
+    <ol class="refs">
+      <li><b>EvilGenie</b> observed explicit reward hacking by Codex and Claude Code. <a href="https://arxiv.org/abs/2511.21654">arXiv 2511.21654</a></li>
+      <li><b>SpecBench</b>: frontier agents saturate visible tests while hacking persists on held-out ones. <a href="https://arxiv.org/abs/2605.21384">arXiv 2605.21384</a></li>
+      <li><b>BenchJack</b>: a single root <code>conftest.py</code> hook can rewrite every test outcome. <a href="https://arxiv.org/abs/2605.12673">arXiv 2605.12673</a></li>
+      <li><b>Escalation channels</b>: agents rarely disclose tampering; giving them a way to report a broken test reduces hacking. <a href="https://arxiv.org/abs/2608.29460">arXiv 2608.29460</a></li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Snitch, open source under the MIT license.</span>
+    <span><a href="https://github.com/ennajari/Snitch">GitHub</a> · <a href="https://github.com/ennajari/Snitch/issues/new">Report a cheat Snitch missed</a></span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.tabs button').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach(function (t) {
+        t.setAttribute('aria-selected', String(t === tab));
+      });
+      document.querySelectorAll('.panel').forEach(function (p) {
+        p.hidden = p.dataset.panel !== tab.dataset.tab;
+      });
+    });
+  });
+  document.querySelectorAll('.copy').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var text = button.parentElement.querySelector('pre').innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = 'Copied';
+        setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+      });
+    });
+  });
+</script>
+</body>
+</html>
