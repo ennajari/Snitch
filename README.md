@@ -16,6 +16,11 @@
   <img src="https://img.shields.io/badge/status-early-orange" alt="Status: early">
 </p>
 
+<p align="center">
+  <img src="assets/demo-session.gif" width="760" alt="Claude Code with Snitch: the agent runs the tests, finds a wrong expected value, calls escalate instead of editing the test, and tells the user">
+  <br><sub>A real <code>claude plugin eval</code> run (2026-10-24, case <code>broken-expected-value</code>), replayed; the agent's messages are quoted, shortened where marked “…”. Without Snitch, the same agent edited the test in 8 of 32 trap runs.</sub>
+</p>
+
 ---
 
 You ask a coding agent to make CI green. It comes back with "all tests pass". What it
