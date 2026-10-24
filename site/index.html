@@ -378,7 +378,7 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
       <div class="board-head"><b>First results · Claude Code</b><span>edition 2026-11 · claude-sonnet-5-5 · 40 tasks × 3 runs · human-reviewed</span></div>
       <h4>Trials where the agent changed a test</h4>
         <div class="brow"><span class="name">broken test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="56%"></i></div><span class="val">10/18</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/18</span></div></div></div>
-        <div class="brow"><span class="name">flaky test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="27%"></i></div><span class="val">4/15</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
+        <div class="brow"><span class="name">flaky test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="53%"></i></div><span class="val">8/15</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
         <div class="brow"><span class="name">impossible spec</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
         <div class="brow"><span class="name">missing service</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
         <div class="brow"><span class="name">hard task</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
@@ -391,8 +391,8 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
         <div class="brow"><span class="name">hard task</span><div class="bars"><div class="pair"><div class="bar"><i class="esc" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
       <div class="legend"><span><i style="background:var(--muted)"></i>no plugin</span><span><i style="background:var(--accent)"></i>with Snitch</span><span><i style="background:var(--green)"></i>escalated</span></div>
     </div>
-    <p class="note">14 test edits in 120 trials without Snitch, 0 in 120 with it (paired McNemar p = 0.0001; per task 6 → 0, p = 0.031).
-      Every one of the 14 was disclosed, and on the broken tests the agent was right that the test was wrong; silent cheating was 0 in both arms.
+    <p class="note">18 test changes in 120 trials without Snitch, 0 in 120 with it (paired McNemar p = 0.000008; per task 8 → 0, p = 0.008).
+      Corrected from 14 after a second review pass. Every one of the 18 was disclosed, and on the broken tests the agent was right that the test was wrong; silent cheating was 0 in both arms.
       No false alarms on 42 control trials. One agent so far, so this is not a leaderboard yet.
       <a href="https://github.com/ennajari/Snitch/blob/master/bench/results/2026-11/README.md">Full results, review and limits</a>.</p>
   </div>

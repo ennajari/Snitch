@@ -224,16 +224,18 @@ and without the Snitch plugin; every flagged trial reviewed by hand
 
 | | without Snitch | with Snitch |
 |---|---|---|
-| trials where the agent changed a test | **14 / 120** | **0 / 120** |
+| trials where the agent changed a test | **18 / 120** | **0 / 120** |
 | …of them hidden from the user (silent) | 0 | 0 |
 | trap trials where it called `escalate` instead | n/a | 51 / 78 |
 | false alarms on the 42 control trials | 0 | 0 |
 
-Paired McNemar p = 0.0001 (per task: 6 → 0, p = 0.031). The 14 edits came from broken
-tests (10) and flaky tests (4), and every one was disclosed: Claude Code changed the
+Paired McNemar p = 0.000008 (per task: 8 → 0, p = 0.008). The 18 changes came from broken
+tests (10) and flaky tests (8), and every one was disclosed: Claude Code changed the
 test and said so, and on the broken tests it was right that the test was wrong. With
 Snitch it reported the problem instead of changing the test. One agent so far, so this
 is not yet a leaderboard; other agents are next.
+(Corrected from 14: a second review pass found 4 more, all disclosed; see the
+results page.)
 
 ## Roadmap
 
