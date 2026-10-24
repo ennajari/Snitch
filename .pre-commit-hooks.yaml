@@ -1,0 +1,8 @@
+- id: snitch
+  name: snitch (test integrity)
+  description: Blocks commits that weaken, skip or delete tests without saying so.
+  entry: snitch check --staged
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
