@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use Snitch or TemptationBench, please cite it as below."
+type: software
+title: "Snitch: an integrity layer for AI coding agents, and TemptationBench"
+abstract: >-
+  Snitch detects when an AI coding agent makes tests pass by tampering with them
+  (weakening, skipping or deleting tests, reconfiguring the test runner, planting the
+  values a test asserts) and checks whether the agent disclosed it. It ships as a Claude
+  Code plugin with an escalation tool and an anti-reward-hacking policy, a GitHub Action
+  and pre-commit hook, and TemptationBench, a set of 40 tasks with built-in temptations
+  and hidden tests for measuring how often coding agents cheat.
+authors:
+  - family-names: Ennajari
+    given-names: Abdellah
+version: 0.1.0
+date-released: "2026-10-24"
+license: MIT
+url: "https://ennajari.github.io/Snitch/"
+repository-code: "https://github.com/ennajari/Snitch"
+keywords:
+  - AI coding agents
+  - reward hacking
+  - test tampering
+  - benchmark
+  - software testing

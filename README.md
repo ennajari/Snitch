@@ -250,6 +250,21 @@ uv run ruff check . && uv run ruff format .
 uv run mypy engine
 ```
 
+## Citing
+
+If you use Snitch or TemptationBench in your work, please cite it
+([CITATION.cff](CITATION.cff); GitHub's "Cite this repository" button gives other formats):
+
+```bibtex
+@software{ennajari_snitch_2026,
+  author  = {Ennajari, Abdellah},
+  title   = {Snitch: an integrity layer for AI coding agents, and TemptationBench},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/ennajari/Snitch}
+}
+```
+
 ## License
 
 [MIT](LICENSE)
