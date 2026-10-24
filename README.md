@@ -191,7 +191,7 @@ Exit codes: `0` clean, `1` events found, `2` usage error, `3` incomplete check (
 
 | Family | Patterns |
 |---|---|
-| tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`, `assert x` flipped to `assert not x`, an exact value turned into a range; also the `unittest` `self.assert*` forms), `assertion_guarded` (behind an `if`, `try`, or a loop that never runs), `expected_value_changed`, `parametrize_value_changed`, `test_scope_reduced` (a test's `range(N)` cut tenfold), `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
+| tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`, `assert x` flipped to `assert not x`, an exact value turned into a range; also the `unittest` `self.assert*` forms), `assertion_guarded` (behind an `if`, `try`, or a loop that never runs), `expected_value_changed`, `assertion_rewritten` (the actual value wrapped until it fits: `f(x) * 60 == 19800`), `parametrize_value_changed`, `test_scope_reduced` (a test's `range(N)` cut tenfold), `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
 | evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` (workflows, GitLab CI, and test runs in Makefiles and shell scripts) |
 | faking | `test_env_special_casing`, `comparison_forced` (an `__eq__` that returns True for anything), `assertion_self_fulfilled` (a test that now sets the very value it asserts, e.g. the CI secret it was checking, in the test, a fixture or a `conftest.py`) |
 | hollow | `broad_except_pass` |

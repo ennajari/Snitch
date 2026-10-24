@@ -439,6 +439,21 @@ def _is_literal(node: Node) -> bool:
     return node.type in LITERALS
 
 
+def _rewritten(before: Node, after: Node) -> bool:
+    """The expected literal stays, but the actual side is wrapped in a new expression
+    until it matches: `f(x) == 19800` became `f(x) * 60 == 19800`."""
+    old, new = _equality(before), _equality(after)
+    if old is None or new is None:
+        return False
+    for i in (0, 1):
+        expected, actual = old[1 - i], old[i]
+        if not _is_literal(expected) or _text(new[1 - i]) != _text(expected):
+            continue
+        if _text(new[i]) != _text(actual) and _text(actual) in _text(new[i]):
+            return True
+    return False
+
+
 def _literal_changed(before: Node, after: Node) -> bool:
     old, new = _equality(before), _equality(after)
     if old is None or new is None:
@@ -617,6 +632,19 @@ def diff_ast(
                     "test_scope_reduced",
                     [b for b, _ in shrunk],
                     [a for _, a in shrunk],
+                    severity="medium",
+                )
+
+            rewritten = [
+                (b, a)
+                for b, a in changed
+                if (b, a) not in weakened and _rewritten(b, a)
+            ]
+            if rewritten:
+                emit(
+                    "assertion_rewritten",
+                    [b for b, _ in rewritten],
+                    [a for _, a in rewritten],
                     severity="medium",
                 )
 
