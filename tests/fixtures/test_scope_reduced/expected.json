@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "test_scope_reduced",
+    "severity": "medium",
+    "file": "test_ids.py",
+    "line_start": 6,
+    "line_end": 6,
+    "before": "range(20_000)",
+    "after": "range(100)",
+    "detector": "ast"
+  }
+]

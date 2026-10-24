@@ -211,6 +211,19 @@ def _self_fulfilled(
     ]
 
 
+def _ranges(fn: Node) -> list[tuple[Node, int]]:
+    """`range(N)` calls with one integer literal, in source order."""
+    found = []
+    for n in _walk(fn):
+        args = _positional(n) if n.type == "call" and _callee(n) == "range" else []
+        if len(args) == 1 and args[0].type == "integer":
+            try:
+                found.append((n, int(_text(args[0]), 0)))
+            except ValueError:
+                pass  # a literal Python itself would reject
+    return found
+
+
 def _skip_calls(fn: Node) -> list[Node]:
     return [n for n in _walk(fn) if n.type == "call" and _callee(n) in SKIP_CALLS]
 
@@ -587,6 +600,24 @@ def diff_ast(
                     family="faking",
                     # an injection from a conftest.py has no line in this file
                     span=[i for i in injections if i not in from_conftest] or asserts,
+                )
+
+            # a test that now checks a tenth (or less) of the cases it used to:
+            # `range(20_000)` became `range(100)`
+            # shortcut: pairs ranges by position; only range(N), not other loop sizes
+            shrunk = [
+                (b, a)
+                for (b, old), (a, new) in zip(
+                    _ranges(old_fn), _ranges(fn), strict=False
+                )
+                if new * 10 <= old
+            ]
+            if shrunk:
+                emit(
+                    "test_scope_reduced",
+                    [b for b, _ in shrunk],
+                    [a for _, a in shrunk],
+                    severity="medium",
                 )
 
             old_skips, skips = _skip_calls(old_fn), _skip_calls(fn)

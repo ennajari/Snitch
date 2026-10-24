@@ -58,6 +58,8 @@ COMPARED = {
         "legit_range_tightened",
         "assertion_self_fulfilled_conftest",
         "legit_conftest_env_fixture",
+        "test_scope_reduced",
+        "legit_range_extended",
     ],
 )
 def test_astdiff_fixture(name: str, tmp_path: Path) -> None:
