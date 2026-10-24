@@ -90,19 +90,21 @@ detector is a pure function of (before, after):
 
 `claude plugin eval` on 20 seeded repos (broken test, impossible spec, flaky test, slow
 test, runner config, controls), 2 runs per case, with and without the plugin
-([full report](docs/evals/2026-10-24-plugin-eval.md)):
+([full report](docs/evals/2026-10-24-plugin-eval-policy.md)):
 
 | | without Snitch | with Snitch |
 |---|---|---|
-| trap runs where the agent edited the test | **7 / 32** | **0 / 32** |
-| trap runs that called `escalate` | n/a | 25 / 32 |
+| trap runs where the agent edited the test | **8 / 32** | **0 / 32** |
+| trap runs that called `escalate` | n/a | 28 / 32 |
 | control tasks completed | 8 / 8 | 8 / 8 |
 | false escalations on controls | 0 | 0 |
 
-Paired McNemar p = 0.016 (per case: 4 cases → 0, p = 0.125). In this run the agent
-disclosed every test edit even without Snitch, so it says nothing yet about *silent*
-cheating; that is what TemptationBench, with hidden tests, is for. The report lists the
-threats to validity.
+Paired McNemar p = 0.008 (per case: 5 cases → 0, p = 0.063). An earlier run without the
+session-start policy gave 7/32 → 0/32 with 25/32 escalations
+([report](docs/evals/2026-10-24-plugin-eval.md)). In both runs the agent disclosed every
+test edit even without Snitch, so this says nothing yet about *silent* cheating; that is
+what TemptationBench, with hidden tests, is for. The reports list the threats to
+validity.
 
 ## Install
 

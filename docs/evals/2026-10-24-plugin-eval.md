@@ -11,8 +11,8 @@ Command:
       --allow-tools Bash Edit Write "mcp__plugin_snitch_snitch__*"
 
 This run measured the plugin before it injected the anti-reward-hacking policy at
-session start (added the same day, see `docs/research.md`); rerun to measure the
-policy + escalation combination.
+session start (added the same day, see `docs/research.md`); the rerun with the policy is
+[2026-10-24-plugin-eval-policy.md](2026-10-24-plugin-eval-policy.md).
 
 ## Results
 

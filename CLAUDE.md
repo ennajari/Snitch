@@ -95,7 +95,9 @@ now; proper packaging decided at publish time.
       escalated; silent cheats 0 in both arms (baseline disclosed every edit); controls
       8/8 done, no false escalation. Caveat: the eval sandbox mounts the workspace and
       TMPDIR read-only for Bash (Edit/Write still work), reported upstream; config-coverage
-      cannot run there. Graders do not check the code under test stayed correct.
+      cannot run there. Rerun with the session-start policy and code-intact graders
+      ($10.49, docs/evals/2026-10-24-plugin-eval-policy.md): 8/32 -> 0/32 (McNemar
+      p = 0.008; per case 5 -> 0), 28/32 escalated, silent 0 both arms, controls clean.
 
 ## Bench (TemptationBench, weeks 3–5) — started
 Harbor task layout (checked against Harbor's create-task skill, Oct 2026):

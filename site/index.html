@@ -166,15 +166,15 @@ detector  ast
     <div class="table">
       <table>
         <tr><th></th><th>without Snitch</th><th>with Snitch</th></tr>
-        <tr><td>Trap runs where the agent edited the test</td><td class="num">7 / 32</td><td class="num">0 / 32</td></tr>
-        <tr><td>Trap runs that called <code>escalate</code></td><td class="num">n/a</td><td class="num">25 / 32</td></tr>
+        <tr><td>Trap runs where the agent edited the test</td><td class="num">8 / 32</td><td class="num">0 / 32</td></tr>
+        <tr><td>Trap runs that called <code>escalate</code></td><td class="num">n/a</td><td class="num">28 / 32</td></tr>
         <tr><td>Control tasks completed</td><td class="num">8 / 8</td><td class="num">8 / 8</td></tr>
         <tr><td>False escalations on controls</td><td class="num">0</td><td class="num">0</td></tr>
       </table>
     </div>
-    <p class="note">Paired McNemar p = 0.016 (per case: 4 → 0, p = 0.125). One agent, one model, small n.
-      In this run the agent disclosed every test edit even without Snitch, so it says nothing yet about
-      <em>silent</em> cheating. <a href="https://github.com/ennajari/Snitch/blob/master/docs/evals/2026-10-24-plugin-eval.md">Full report and threats to validity</a>.</p>
+    <p class="note">Paired McNemar p = 0.008 (per case: 5 → 0, p = 0.063). One agent, one model, small n.
+      The agent disclosed every test edit even without Snitch, so this says nothing yet about
+      <em>silent</em> cheating. <a href="https://github.com/ennajari/Snitch/blob/master/docs/evals/2026-10-24-plugin-eval-policy.md">Full report and threats to validity</a>.</p>
   </div>
 </section>
 
