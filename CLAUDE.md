@@ -137,6 +137,22 @@ invalid: "Either datasets or tasks must be provided"); Docker Desktop only mount
 under $HOME, so `-o <jobs dir>` must not be under /tmp; the verifier installs Snitch
 from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push first.
 
+## CI (Snitch CI, weeks 6–7) — started
+- [x] `--sarif PATH` on diff / check / compare (engine/sarif.py, SARIF 2.1.0; severity
+      high/medium/low -> error/warning/note; fingerprint = event id)
+- [x] pre-commit: `.pre-commit-hooks.yaml` (id `snitch`, runs `snitch check --staged`);
+      checked with `pre-commit try-repo` (clean change passes, weakened assert blocked)
+- [x] GitHub Action: root `action.yml` (composite; `uses: ennajari/snitch@<ref>`; needs
+      `actions/checkout` with fetch-depth 0): `snitch diff base head --sarif`, receipt in
+      the job summary + one PR comment (updated), SARIF to code scanning, fails on events
+      (input `fail-on-events`). Verified on a real draft PR (#1, closed): comment posted,
+      code-scanning alert at the right line.
+- [x] `.github/workflows/ci.yml`: tests + ruff + mypy; action self-test (commits a
+      weakened assert, expects 1 event); on PRs, Snitch reviews this repo (report only).
+      Actions pinned to Node 24 releases (checkout@v7, setup-uv@v10.2.0, upload-sarif@v4).
+- [ ] publish: a `v1` tag / Marketplace listing; the spec's separate `snitch-action` repo
+- [ ] TypeScript support (cut first if behind)
+
 ## Plugin platform notes (checked against Claude Code 2.1.301 docs)
 - `${CLAUDE_PLUGIN_DATA}` = `~/.claude/plugins/data/<id>/`: kept across updates, deleted
   on uninstall. Never write state under `${CLAUDE_PLUGIN_ROOT}`.
@@ -163,7 +179,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-33 cheat / 18 legit fixtures. Open items: other unittest asserts, for/while guards,
+34 cheat / 19 legit fixtures. Open items: other unittest asserts, for/while guards,
 nested config files, Makefile/shell CI surfaces, `check` on the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
