@@ -51,6 +51,7 @@ COMPARED = {
         "legit_assert_in_loop",
         "assertion_self_fulfilled",
         "legit_test_env_setup",
+        "assertion_self_fulfilled_fixture",
     ],
 )
 def test_astdiff_fixture(name: str, tmp_path: Path) -> None:

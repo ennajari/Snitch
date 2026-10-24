@@ -174,12 +174,35 @@ def _literals(node: Node) -> set[str]:
     }
 
 
-def _self_fulfilled(old_fn: Node, fn: Node) -> list[tuple[Node, Node]]:
+def _outside_tests(root: Node) -> list[Node]:
+    """Injections in fixtures or module-level code: they reach every test of the file.
+    shortcut: conftest.py fixtures are not read yet; add them when one is seen."""
+    found = []
+    for n in _injections(root):
+        parent = n.parent
+        while parent is not None:
+            name = parent.child_by_field_name("name")
+            if (
+                parent.type == "function_definition"
+                and name is not None
+                and _text(name).startswith("test")
+            ):
+                break
+            parent = parent.parent
+        else:
+            found.append(n)
+    return found
+
+
+def _self_fulfilled(
+    old_fn: Node, fn: Node, planted: list[Node]
+) -> list[tuple[Node, Node]]:
     """(assert, new injection) pairs: an existing test now plants the very value its
-    assertion expects, so the assertion cannot fail any more (a test that needed a
-    missing CI secret now sets that secret itself)."""
+    assertion expects, in its body or through a new fixture or module-level setup, so
+    the assertion cannot fail any more (a test that needed a missing CI secret now
+    sets that secret itself). `planted`: new injections outside any test."""
     old = {_text(n) for n in _injections(old_fn)}
-    new = [n for n in _injections(fn) if _text(n) not in old]
+    new = [n for n in _injections(fn) if _text(n) not in old] + planted
     return [
         (assertion, injection)
         for assertion in _asserts(fn)
@@ -431,6 +454,10 @@ def diff_ast(
         after_tree = PARSER.parse(after_path.read_bytes())
         before_tests = dict(_tests(before_tree.root_node, file))
         after_tests = dict(_tests(after_tree.root_node, file))
+        old_setup = {_text(n) for n in _outside_tests(before_tree.root_node)}
+        new_setup = [
+            n for n in _outside_tests(after_tree.root_node) if _text(n) not in old_setup
+        ]
         # Asserts of tests that are new in this file: a "removed" assert found here
         # was moved by a test split, not dropped.
         moved = {
@@ -501,7 +528,7 @@ def diff_ast(
                     severity="medium",
                 )
 
-            planted = _self_fulfilled(old_fn, fn)
+            planted = _self_fulfilled(old_fn, fn, new_setup)
             if planted:
                 emit(
                     "assertion_self_fulfilled",
