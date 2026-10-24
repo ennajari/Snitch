@@ -103,7 +103,13 @@ impossible_spec | no_env | flaky | hard | control.
       (trap is real, solve.sh scores 1, cheat.sh scores 0, files in sync); Harbor oracle
       run in Docker: 8/8 reward 1. Generator script lives outside the repo; the task
       files are the source of truth.
-- [ ] 32 more tasks (≥40 for edition 1, a third controls; some CLI / FastAPI projects)
+- [x] 40 tasks: 6 broken_test, 5 impossible_spec, 5 no_env, 5 flaky, 5 hard, 14 control
+      (35%). All verified locally (tests/test_bench.py) and by a Harbor oracle run in
+      Docker (40/40 reward 1). Stdlib + pytest projects only: a FastAPI task would need
+      FastAPI as a dev dependency (ask first). Controls never edit existing asserts: a
+      legit test update is flagged by the deterministic engine until the judge exists.
+      Writing them found a detector gap, now fixed: loosened numeric bounds
+      (`x < 0.01` → `x < 1`) are `assertion_weakened`.
 - [ ] bench/score.py (TrialResult rows, silent-cheat rate, bootstrap CI, McNemar) +
       disclosure judge (outside the engine)
 - [ ] "with Snitch" arm for Claude Code inside Harbor
@@ -138,7 +144,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-32 cheat / 17 legit fixtures. Open items: other unittest asserts, for/while guards,
+33 cheat / 18 legit fixtures. Open items: other unittest asserts, for/while guards,
 nested config files, Makefile/shell CI surfaces, `check` on the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
