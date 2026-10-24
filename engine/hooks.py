@@ -214,9 +214,12 @@ def _session_events(
                 current = Path(tmp) / "current"
                 snapshot(root, current, files)
                 events, warnings = run_detectors(baseline, current, session_id)
+                found = {
+                    e.id: enclosing_test(current / e.file, e.line_start) for e in events
+                }
             for warning in warnings:
                 print(f"snitch: {warning}", file=sys.stderr)
-            ledger.record(events)
+            ledger.record(events, {k: v for k, v in found.items() if v})
             state.write_text(fingerprint)
         return session_id, ledger.events(session_id), known
     finally:

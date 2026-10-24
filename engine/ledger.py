@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS escalations (
     evidence TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS event_tests (
+    id TEXT PRIMARY KEY,
+    test TEXT NOT NULL
+);
 """
 
 
@@ -33,8 +37,12 @@ class Ledger:
         self._db = sqlite3.connect(path)
         self._db.executescript(SCHEMA)
 
-    def record(self, events: Iterable[SnitchEvent]) -> int:
-        """Store events; returns how many were new (ids already present are kept)."""
+    def record(
+        self, events: Iterable[SnitchEvent], tests: dict[str, str] | None = None
+    ) -> int:
+        """Store events; returns how many were new (ids already present are kept).
+        `tests` (event id -> name of the test the event is in) lets an escalation of
+        one test cover only that test's events."""
         with self._db:
             known = self._db.total_changes
             self._db.executemany(
@@ -44,7 +52,12 @@ class Ledger:
                     for e in events
                 ],
             )
-            return self._db.total_changes - known
+            new = self._db.total_changes - known
+            self._db.executemany(
+                "INSERT OR IGNORE INTO event_tests VALUES (?, ?)",
+                list((tests or {}).items()),
+            )
+            return new
 
     def escalate(
         self, session_id: str, test_id: str, reason: str, evidence: str
@@ -82,24 +95,35 @@ class Ledger:
                 )
 
     def events(self, session_id: str) -> list[SnitchEvent]:
-        """The session's events; `escalated` is set for files the agent escalated."""
-        # shortcut: escalation covers the whole test file, earlier and later events
-        # alike; match on test node ids if one bad test hides cheats on its neighbours.
-        escalated = {
-            file
-            for (file,) in self._db.execute(
-                "SELECT file FROM escalations WHERE session_id = ?", (session_id,)
-            )
-        }
+        """The session's events; `escalated` is set for the tests the agent escalated:
+        an escalated file covers all its events, earlier and later; an escalated
+        `file::test` covers that test's events, plus the file's events whose test is
+        unknown (so one bad test never hides a cheat in a neighbouring test)."""
+        whole: set[str] = set()
+        named: dict[str, set[str]] = {}
+        for file, test_id in self._db.execute(
+            "SELECT file, test_id FROM escalations WHERE session_id = ?", (session_id,)
+        ):
+            name = test_id.split("::")[-1].split("[")[0] if "::" in test_id else ""
+            if name:
+                named.setdefault(file, set()).add(name)
+            else:
+                whole.add(file)
         rows = self._db.execute(
-            "SELECT data FROM events WHERE session_id = ? ORDER BY created_at, id",
+            "SELECT e.data, t.test FROM events e LEFT JOIN event_tests t ON t.id = e.id"
+            " WHERE e.session_id = ? ORDER BY e.created_at, e.id",
             (session_id,),
         )
-        events = [SnitchEvent.model_validate_json(data) for (data,) in rows]
-        return [
-            e.model_copy(update={"escalated": True}) if e.file in escalated else e
-            for e in events
-        ]
+        events = []
+        for data, test in rows:
+            event = SnitchEvent.model_validate_json(data)
+            covered = event.file in whole or (
+                event.file in named and (test is None or test in named[event.file])
+            )
+            events.append(
+                event.model_copy(update={"escalated": True}) if covered else event
+            )
+        return events
 
     def close(self) -> None:
         self._db.close()

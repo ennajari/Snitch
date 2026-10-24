@@ -92,6 +92,31 @@ def test_escalation_covers_events_in_that_file(tmp_path: Path) -> None:
     assert escalated == {earlier.id: True, other.id: False, later.id: True}
 
 
+def test_escalating_one_test_leaves_its_neighbours_flagged(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.db")
+    wrong = in_file("s1", "tests/test_calc.py::test_a", "tests/test_calc.py")
+    neighbour = in_file("s1", "tests/test_calc.py::test_b", "tests/test_calc.py")
+    unknown = in_file("s1", "tests/test_calc.py::test_c", "tests/test_calc.py")
+    ledger.record(
+        [wrong, neighbour, unknown], {wrong.id: "test_a", neighbour.id: "test_b"}
+    )
+
+    ledger.escalate("s1", "tests/test_calc.py::test_a", "expects 4, spec says 5", "")
+
+    escalated = {e.id: e.escalated for e in ledger.events("s1")}
+    assert escalated == {wrong.id: True, neighbour.id: False, unknown.id: True}
+
+
+def test_escalating_a_parametrized_case_covers_its_test(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.db")
+    event = in_file("s1", "tests/test_calc.py::test_a", "tests/test_calc.py")
+    ledger.record([event], {event.id: "test_a"})
+
+    ledger.escalate("s1", "tests/test_calc.py::test_a[2-3]", "flaky", "")
+
+    assert [e.escalated for e in ledger.events("s1")] == [True]
+
+
 def test_escalation_is_per_session(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "ledger.db")
     mine = in_file("s1", "tests/test_calc.py::test_a", "tests/test_calc.py")

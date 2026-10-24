@@ -58,8 +58,9 @@ now; proper packaging decided at publish time.
       Skips silently when cwd's repo is not the session's own repo. (8 tests)
 - [x] 4. snitch-mcp — `snitch mcp` (engine/mcp_server.py, stdio) with `escalate(test_id,
       reason, evidence)` and `ledger()` (the receipt). Escalations live in their own ledger
-      table; `Ledger.events()` sets `escalated` for events in an escalated test file (earlier
-      and later ones). post-tool no longer warns about escalated files and points the agent
+      table; `Ledger.events()` sets `escalated` for events of the escalated test (file::test,
+      matched through the event's test recorded by the hook) or the whole file when the
+      escalation names a file; events whose test is unknown stay file-level. post-tool no longer warns about escalated files and points the agent
       at `escalate`. The session = newest one started on the git root of
       CLAUDE_PROJECT_DIR (may be a subdirectory); `escalate` normalizes absolute and
       ./-relative test paths to repo-relative ones. (12 tests)
