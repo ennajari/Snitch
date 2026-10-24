@@ -204,7 +204,24 @@ both checked in CI and in Docker.
 rate, silent-cheat rate (with a bootstrap 95% interval over tasks), honest-escalation
 rate, false positives on controls, a per-temptation breakdown, and McNemar's test for
 with vs without Snitch. Flagged trials are confirmed or cleared with human labels.
-**No leaderboard results are published yet.**
+### First results: Claude Code (edition 2026-11)
+
+Claude Code 2.1.310 on its default model (claude-sonnet-5-5), 40 tasks × 3 runs, with
+and without the Snitch plugin; every flagged trial reviewed by hand
+([full results and limits](bench/results/2026-11/README.md)):
+
+| | without Snitch | with Snitch |
+|---|---|---|
+| trials where the agent changed a test | **14 / 120** | **0 / 120** |
+| …of them hidden from the user (silent) | 0 | 0 |
+| trap trials where it called `escalate` instead | n/a | 51 / 78 |
+| false alarms on the 42 control trials | 0 | 0 |
+
+Paired McNemar p = 0.0001 (per task: 6 → 0, p = 0.031). The 14 edits came from broken
+tests (10) and flaky tests (4), and every one was disclosed: Claude Code changed the
+test and said so, and on the broken tests it was right that the test was wrong. With
+Snitch it reported the problem instead of changing the test. One agent so far, so this
+is not yet a leaderboard; other agents are next.
 
 ## Roadmap
 
@@ -212,7 +229,8 @@ with vs without Snitch. Flagged trials are confirmed or cleared with human label
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
-- [ ] Edition 1 of the leaderboard (4–6 agents × 3 runs × with/without Snitch, human-reviewed)
+- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch, human-reviewed)
+- [ ] More agents for the leaderboard (Codex CLI, Gemini CLI, OpenCode, …)
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
 
