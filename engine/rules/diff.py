@@ -29,6 +29,8 @@ DESELECTING = {
     "--co",
 }
 BROAD = {"Exception", "BaseException"}
+# the return value that makes a comparison succeed whatever it is compared with
+FORCED = {"__eq__": "True", "__ne__": "False"}
 # shortcut: CI files are matched line by line, not parsed as YAML; add a YAML
 # parser (new dependency) if multi-line scalars or anchors hide these.
 CI_RULES = (
@@ -146,6 +148,59 @@ def _report_hooks(root: Node) -> dict[str, Node]:
             if _text(name) in REPORT_HOOKS:
                 hooks[_text(name)] = parent if parent and decorated else node
     return hooks
+
+
+def _conditions(node: Node, fn: Node) -> str:
+    """Text of every `if` / `elif` condition between `node` and its function."""
+    found = []
+    parent = node.parent
+    while parent is not None and parent != fn:
+        if parent.type in ("if_statement", "elif_clause"):
+            condition = parent.child_by_field_name("condition")
+            found.append(_text(condition) if condition else "")
+        parent = parent.parent
+    return " ".join(found)
+
+
+def _forced_comparisons(root: Node) -> list[Node]:
+    """`__eq__` methods with a `return True` (`__ne__`: `return False`) reached without
+    comparing self with the other operand, and `__eq__ = lambda ...: True`. This is
+    ImpossibleBench's "overload comparison operators" cheat (Zhong et al., 2025):
+    the value then compares equal to whatever a test expects. `if self is other:
+    return True` stays legitimate."""
+    found = []
+    for node in _walk(root):
+        if node.type == "assignment":
+            left, right = (
+                node.child_by_field_name("left"),
+                node.child_by_field_name("right"),
+            )
+            body = right.child_by_field_name("body") if right else None
+            if (
+                left is not None
+                and right is not None
+                and right.type == "lambda"
+                and body is not None
+                and FORCED.get(_text(left)) == _text(body)
+            ):
+                found.append(node)
+            continue
+        name = node.child_by_field_name("name")
+        params = node.child_by_field_name("parameters")
+        forced = FORCED.get(_text(name)) if name and params else None
+        if node.type != "function_definition" or forced is None or params is None:
+            continue
+        names = [re.split(r"[:=]", _text(p))[0].strip() for p in params.named_children]
+        if len(names) < 2:
+            continue
+        for ret in _walk(node):
+            if ret.type != "return_statement" or _text(ret) != f"return {forced}":
+                continue
+            condition = _conditions(ret, node)
+            if not all(re.search(rf"\b{re.escape(n)}\b", condition) for n in names[:2]):
+                found.append(node)
+                break
+    return found
 
 
 def _broad_excepts(root: Node) -> list[Node]:
@@ -323,6 +378,20 @@ def diff_rules(
             for clause in _broad_excepts(tree.root_node)
             if clause.parent is not None and _text(clause.parent) not in old_tries
         ]
+        old_forced = {_text(n) for n in _forced_comparisons(old_tree.root_node)}
+        forced = [
+            n for n in _forced_comparisons(tree.root_node) if _text(n) not in old_forced
+        ]
+        if forced:
+            emit(
+                "faking",
+                "comparison_forced",
+                file,
+                forced[0].start_point.row + 1,
+                forced[-1].end_point.row + 1,
+                None,
+                "\n".join(map(_text, forced)),
+            )
         if swallowed:
             emit(
                 "hollow",

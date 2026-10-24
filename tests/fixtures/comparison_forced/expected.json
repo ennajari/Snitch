@@ -1,0 +1,13 @@
+[
+  {
+    "family": "faking",
+    "pattern": "comparison_forced",
+    "severity": "high",
+    "file": "errors.py",
+    "line_start": 5,
+    "line_end": 15,
+    "before": null,
+    "after": "def __eq__(self, other):\n    if isinstance(other, ErrorCode):\n        return self.value == other.value\n    if isinstance(other, str):\n        # equal to any string, so both expectations pass\n        return True\n    return NotImplemented\n__eq__ = lambda self, other: True",
+    "detector": "rule"
+  }
+]
