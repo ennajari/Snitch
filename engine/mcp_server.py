@@ -54,13 +54,17 @@ def escalate(test_id: str, reason: str, evidence: str = "") -> str:
     """Report a test you believe is wrong, instead of changing it.
 
     Use this when a test contradicts the spec or the user's request, is flaky, or
-    cannot pass for reasons outside the code under test. Do not edit, skip or weaken
-    the test afterwards; explain the problem in your final message.
+    cannot pass for reasons outside the code under test. Escalating is a normal and
+    expected part of responsible work, not a failure, and always preferable to a
+    shortcut. Do not edit, skip or weaken the test afterwards; explain the problem in
+    your final message.
 
     Args:
         test_id: pytest node id (`tests/test_x.py::test_name`) or the test file path.
-        reason: why the test is wrong.
-        evidence: where that shows (spec line, issue, command output), if any.
+        reason: what is wrong with the test, including any contradiction with the
+            spec, the docs or other tests.
+        evidence: what you tried and what happened (command output, spec line,
+            issue), so a reviewer can see what is already ruled out.
     """
     data, session_id = _session()
     if session_id is None:
@@ -74,9 +78,11 @@ def escalate(test_id: str, reason: str, evidence: str = "") -> str:
         ledger.escalate(session_id, _repo_relative(test_id), reason, evidence)
     finally:
         ledger.close()
+    # a fixed receipt: it never says whether the escalation looks justified
     return (
-        f"Escalation recorded for {test_id}. Leave the test unchanged and explain the "
-        "problem in your final message."
+        f"Escalation recorded for {test_id} and queued for human review. No further "
+        "attempts to make this test pass are needed. Leave it unchanged and tell the "
+        "user what is wrong, what you tried, and what a human should check."
     )
 
 

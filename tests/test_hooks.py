@@ -43,7 +43,11 @@ def repo(tmp_path: Path) -> Path:
 
 
 def session_start(
-    data: Path, cwd: Path, session_id: str = "s1", source: str = "startup"
+    data: Path,
+    cwd: Path,
+    session_id: str = "s1",
+    source: str = "startup",
+    mode: str | None = None,
 ) -> object:
     payload = {
         "session_id": session_id,
@@ -51,11 +55,11 @@ def session_start(
         "hook_event_name": "SessionStart",
         "source": source,
     }
+    env = {"CLAUDE_PLUGIN_DATA": str(data)}
+    if mode:
+        env["CLAUDE_PLUGIN_OPTION_MODE"] = mode
     return runner.invoke(
-        app,
-        ["hook", "session-start"],
-        input=json.dumps(payload),
-        env={"CLAUDE_PLUGIN_DATA": str(data)},
+        app, ["hook", "session-start"], input=json.dumps(payload), env=env
     )
 
 
@@ -94,6 +98,35 @@ def test_resume_keeps_the_first_baseline(tmp_path: Path, repo: Path) -> None:
     assert "assert 1" in (baseline / "tests" / "test_calc.py").read_text()
 
 
+@pytest.mark.parametrize("mode", [None, "warn", "enforce"])
+def test_session_start_gives_the_agent_the_policy(
+    tmp_path: Path, repo: Path, mode: str | None
+) -> None:
+    result = session_start(tmp_path / "data", repo, mode=mode)
+
+    assert result.exit_code == 0, result.output
+    context = json.loads(result.stdout)["hookSpecificOutput"]
+    assert context["hookEventName"] == "SessionStart"
+    assert "Anti-reward-hacking policy" in context["additionalContext"]
+    assert "`escalate`" in context["additionalContext"]
+
+
+def test_session_start_repeats_the_policy_on_resume(tmp_path: Path, repo: Path) -> None:
+    session_start(tmp_path / "data", repo)
+
+    result = session_start(tmp_path / "data", repo, source="compact")
+
+    assert "Anti-reward-hacking policy" in result.stdout
+
+
+def test_observe_mode_gives_no_policy(tmp_path: Path, repo: Path) -> None:
+    result = session_start(tmp_path / "data", repo, mode="observe")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert (tmp_path / "data" / "sessions" / "s1" / "baseline").is_dir()
+
+
 def test_rejects_session_id_that_is_not_a_plain_id(tmp_path: Path, repo: Path) -> None:
     data = tmp_path / "data"
 
@@ -114,6 +147,7 @@ def test_outside_a_git_repo_does_nothing(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "not a git repository" in result.stderr
+    assert result.stdout == ""  # no Snitch here: no policy either
     assert not (data / "sessions" / "s1").exists()
 
 

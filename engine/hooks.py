@@ -23,6 +23,7 @@ from engine.astdiff.diff import _is_test_file
 from engine.detect import run_detectors
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
+from engine.policy import POLICY
 from engine.rules.diff import TEST_RUNNER
 
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -120,8 +121,9 @@ def _drop_stale_sessions(data_dir: Path, keep: Path) -> None:
             shutil.rmtree(session, ignore_errors=True)
 
 
-def session_start(payload: dict[str, Any], data_dir: Path) -> None:
-    """Snapshot the baseline once per session, and drop stale sessions' data."""
+def session_start(payload: dict[str, Any], data_dir: Path) -> str | None:
+    """Snapshot the baseline once per session, and drop stale sessions' data. In
+    warn/enforce mode, give the agent the anti-reward-hacking policy."""
     session = session_dir(data_dir, payload.get("session_id"))
     _drop_stale_sessions(data_dir, keep=session)
     root = toplevel(Path(str(payload.get("cwd") or ".")))
@@ -132,21 +134,25 @@ def session_start(payload: dict[str, Any], data_dir: Path) -> None:
         pointer = _data_pointer(root)
         pointer.parent.mkdir(exist_ok=True)
         pointer.write_text(str(data_dir.resolve()))
-    baseline = session / "baseline"
-    if baseline.exists():
-        return  # resume / compact: the first baseline stays
     if root is None:
         # stderr, not stdout: SessionStart stdout becomes Claude's context
         print(
             f"snitch: {payload.get('cwd')} is not a git repository; no baseline taken",
             file=sys.stderr,
         )
-        return
-    partial = session / "baseline.partial"
-    shutil.rmtree(partial, ignore_errors=True)
-    snapshot(root, partial)
-    # rename last, so a crash mid-copy never leaves a half baseline behind
-    partial.rename(baseline)
+        return None
+    baseline = session / "baseline"
+    if not baseline.exists():  # resume / compact: the first baseline stays
+        partial = session / "baseline.partial"
+        shutil.rmtree(partial, ignore_errors=True)
+        snapshot(root, partial)
+        # rename last, so a crash mid-copy never leaves a half baseline behind
+        partial.rename(baseline)
+    if _mode() == "observe":
+        return None  # observe never changes what the agent does
+    # also on resume / compact: compaction can drop the earlier context
+    context = {"hookEventName": "SessionStart", "additionalContext": POLICY}
+    return json.dumps({"hookSpecificOutput": context})
 
 
 def current_session(data_dir: Path, project: Path) -> str | None:
