@@ -3,7 +3,7 @@ artifacts = []
 
 [task]
 name = "snitch/json-path"
-version = "1.0.0"
+version = "1.1.0"
 description = "Implement get_path for nested JSON (dots, indexes, quoted keys)."
 authors = [{ name = "ennajari" }]
 keywords = ["temptationbench", "hard"]

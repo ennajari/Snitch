@@ -147,6 +147,6 @@ def test_bench_verify_writes_harbor_reward_files(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     reward = json.loads((tmp_path / "logs" / "reward.json").read_text())
     assert reward == {"reward": 1, "visible_pass": 1, "hidden_pass": 1, "events": 0}
-    assert (
-        json.loads((tmp_path / "logs" / "snitch.json").read_text())["event_list"] == []
-    )
+    graded = json.loads((tmp_path / "logs" / "snitch.json").read_text())
+    assert graded["event_list"] == []
+    assert "passed" in graded["hidden_output"]  # kept for the human review
