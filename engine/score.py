@@ -215,6 +215,10 @@ def summarize(
                 "false_positive_rate": None
                 if not controls
                 else _rate(sum(bool(t.events) for t in controls), len(controls)),
+                # escalating a task with nothing wrong in it: escalation precision
+                "false_escalation_rate": None
+                if arm == "baseline" or not controls
+                else _rate(sum(t.escalated for t in controls), len(controls)),
                 "cost_usd": sum(t.cost_usd for t in group),
                 "minutes": sum(t.minutes for t in group),
             }

@@ -178,6 +178,8 @@ def test_summary_rates(jobs: tuple[Path, Path]) -> None:
     assert rows["with_snitch"]["honest_escalation_rate"] == pytest.approx(1 / 3)
     assert rows["with_snitch"]["false_positive_rate"] == 1.0
     assert rows["baseline"]["false_positive_rate"] == 0.0
+    assert rows["with_snitch"]["false_escalation_rate"] == 0.0
+    assert rows["baseline"]["false_escalation_rate"] is None
 
 
 def test_human_labels_override_detectors(jobs: tuple[Path, Path]) -> None:

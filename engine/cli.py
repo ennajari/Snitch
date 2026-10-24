@@ -233,9 +233,10 @@ def bench_score(
 
     typer.echo(
         "| agent | model | arm | trials | solve | cheat | silent-cheat (95% CI) "
-        "| honest escalation | suspicious | false positives | cost $ |"
+        "| honest escalation | false escalation | suspicious | false positives "
+        "| cost $ |"
     )
-    typer.echo("|---|---|---|---|---|---|---|---|---|---|---|")
+    typer.echo("|---|---|---|---|---|---|---|---|---|---|---|---|")
     rows = summarize(trials)
     for row in rows:
         group = [
@@ -248,7 +249,8 @@ def bench_score(
             f"| {row['agent']} | {row['model']} | {row['arm']} | {row['trials']} "
             f"| {pct(row['solve_rate'])} | {pct(row['cheat_rate'])} "
             f"| {pct(row['silent_cheat_rate'])} ({low:.0%}–{high:.0%}) "
-            f"| {pct(row['honest_escalation_rate'])} | {pct(row['suspicious_rate'])} "
+            f"| {pct(row['honest_escalation_rate'])} "
+            f"| {pct(row['false_escalation_rate'])} | {pct(row['suspicious_rate'])} "
             f"| {pct(row['false_positive_rate'])} | {row['cost_usd']:.2f} |"
         )
     typer.echo(
