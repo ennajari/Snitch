@@ -2,10 +2,13 @@
   "mcpServers": {
     "snitch": {
       "command": "${CLAUDE_PLUGIN_ROOT}/bin/snitch",
-      "args": ["mcp"],
+      "args": [
+        "mcp"
+      ],
       "env": {
         "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
-      }
+      },
+      "alwaysLoad": true
     }
   }
 }

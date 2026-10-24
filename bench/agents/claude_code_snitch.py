@@ -29,6 +29,17 @@ class ClaudeCodeWithSnitch(ClaudeCode):
                 f" && test -d {CHECKOUT}/plugin/snitch && chmod -R a+rX {CHECKOUT}"
             ),
         )
+        # warm uvx's cache as the agent's user: a cold start (Snitch + its dependencies)
+        # made the MCP server miss Claude Code's connect timeout, so `escalate` was
+        # missing from the pilot's tool list. Retried like the clone.
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "for attempt in 1 2 3; do"
+                f" {CHECKOUT}/plugin/snitch/bin/snitch --help >/dev/null && break;"
+                " sleep $((attempt * 10)); done"
+            ),
+        )
 
     def build_cli_flags(self) -> str:
         flags = super().build_cli_flags()
