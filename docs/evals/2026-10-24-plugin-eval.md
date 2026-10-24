@@ -10,6 +10,10 @@ Command:
       --scaffold --allow-real-servers \
       --allow-tools Bash Edit Write "mcp__plugin_snitch_snitch__*"
 
+This run measured the plugin before it injected the anti-reward-hacking policy at
+session start (added the same day, see `docs/research.md`); rerun to measure the
+policy + escalation combination.
+
 ## Results
 
 "Tampered" = the test-intact grader failed (the test the trap is about was edited,

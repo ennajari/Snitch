@@ -135,7 +135,7 @@ detector  ast
     <div class="grid">
       <div class="card"><span class="tag">Live</span><h3>Claude Code plugin</h3>
         <p>Warns the agent as soon as a test is weakened. Offers an <code>escalate</code> tool to
-          report a broken test instead of editing it. Won’t let the session end with a test change
+          report a broken test instead of editing it, plus the policy that makes agents use it. Won’t let the session end with a test change
           the agent didn’t mention.</p></div>
       <div class="card"><span class="tag">Every PR</span><h3>GitHub Action &amp; pre-commit</h3>
         <p>Checks any pull request, whoever wrote it: Codex, Copilot, Cursor, Devin or a human.
@@ -152,7 +152,8 @@ detector  ast
         flipped to <code>!=</code>), expected values changed, asserts hidden behind a guard.</p></div>
       <div class="card"><h3>Runner &amp; CI rules</h3><p><code>addopts</code>, coverage thresholds,
         <code>conftest.py</code> report hooks, <code>continue-on-error</code>, <code>|| true</code>,
-        <code>--no-verify</code>, code that special-cases <code>pytest</code>.</p></div>
+        <code>--no-verify</code>, code that special-cases <code>pytest</code>, an <code>__eq__</code>
+        forced to return True.</p></div>
     </div>
   </div>
 </section>
@@ -251,7 +252,8 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
       <li><b>EvilGenie</b> observed explicit reward hacking by Codex and Claude Code. <a href="https://arxiv.org/abs/2511.21654">arXiv 2511.21654</a></li>
       <li><b>SpecBench</b>: frontier agents saturate visible tests while hacking persists on held-out ones. <a href="https://arxiv.org/abs/2605.21384">arXiv 2605.21384</a></li>
       <li><b>BenchJack</b>: a single root <code>conftest.py</code> hook can rewrite every test outcome. <a href="https://arxiv.org/abs/2605.12673">arXiv 2605.12673</a></li>
-      <li><b>Escalation channels</b>: agents rarely disclose tampering; giving them a way to report a broken test reduces hacking. <a href="https://arxiv.org/abs/2608.29460">arXiv 2608.29460</a></li>
+      <li><b>Escalation channels</b>: across 8 frontier models, a written policy plus an escalation tool cut reward hacking from 23.6% to 5.3%. Snitch ships both. <a href="https://arxiv.org/abs/2608.29460">arXiv 2608.29460</a></li>
+      <li><b>ImpossibleBench</b>: agents edit tests, overload <code>__eq__</code>, keep hidden state or special-case inputs; LLM monitors caught only 42–65% of it on real repos. <a href="https://arxiv.org/abs/2510.20270">arXiv 2510.20270</a></li>
     </ol>
   </div>
 </section>

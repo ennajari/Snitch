@@ -78,6 +78,10 @@ now; proper packaging decided at publish time.
       `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` on
       pytest-named test files or frozen paths, and `git ... --no-verify`; the deny reason
       points to `escalate`. A malformed `.snitch.toml` is a hook error (exit 1). (20 tests)
+- [x] SessionStart also gives the agent an anti-reward-hacking policy (engine/policy.py,
+      adapted from Gomez 2026, arXiv 2608.29460: policy + escalation tool 23.6% -> 5.3%)
+      in warn/enforce, on resume too; observe injects nothing. escalate's description
+      and fixed receipt follow the paper's tool design. See docs/research.md.
 - [x] 7. modes via userConfig — `plugin.json` `userConfig.mode` (string picker: observe |
       warn | enforce, default warn; so the plugin needs Claude Code ≥ 2.1.271). Hooks read
       `CLAUDE_PLUGIN_OPTION_MODE`, trimmed and lowercased; empty → warn, unknown → warn
@@ -189,7 +193,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-37 cheat / 22 legit fixtures. Open items:
+38 cheat / 23 legit fixtures (comparison_forced: ImpossibleBench's operator overloading). Open items:
 nested config files, hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).

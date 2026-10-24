@@ -55,10 +55,14 @@ Research has shown that coding agents cheat on tests, and that an honest exit he
   agents rarely disclose tampering, but giving them a way to report a broken test
   reduces hacking; escalating and hacking were almost mutually exclusive.
 
+- **ImpossibleBench** ([arXiv 2510.20270](https://arxiv.org/abs/2510.20270)): on
+  impossible tasks, agents edit tests, overload `__eq__`, keep hidden state or
+  special-case inputs; LLM monitors caught only 42–65% of it on real repos.
+
 Snitch turns those findings into something you install: it **detects** the cheat,
-offers an **`escalate`** tool so the agent can say "this test looks wrong" instead of
-editing it, and **refuses to let a session end** with a test change the agent did not
-mention.
+gives the agent the **policy + `escalate` tool** combination that cut reward hacking
+from 23.6% to 5.3% in the escalation study, and **refuses to let a session end** with a
+test change the agent did not mention. [How each paper shaped Snitch](docs/research.md).
 
 ## How it works
 
@@ -170,7 +174,7 @@ Exit codes: `0` clean, `1` events found, `2` usage error.
 |---|---|
 | tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`; also the `unittest` `self.assert*` forms), `expected_value_changed`, `parametrize_value_changed`, `assertion_guarded`, `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
 | evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` (workflows, GitLab CI, and test runs in Makefiles and shell scripts) |
-| faking | `test_env_special_casing` |
+| faking | `test_env_special_casing`, `comparison_forced` (an `__eq__` that returns True for anything) |
 | hollow | `broad_except_pass` |
 | reporting (plugin, at the end of a turn) | a flagged test change the final message does not mention; "tests pass" claimed with no test run since the last edit |
 
@@ -197,7 +201,7 @@ with vs without Snitch. Flagged trials are confirmed or cleared with human label
 
 ## Roadmap
 
-- [x] Engine: inventory, AST diff, rules (Python / pytest), 37 cheating + 22 legitimate fixtures
+- [x] Engine: inventory, AST diff, rules (Python / pytest), 38 cheating + 23 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
