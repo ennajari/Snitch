@@ -14,7 +14,9 @@ import typer
 from engine import hooks
 from engine.detect import run_detectors
 from engine.ledger import Ledger
+from engine.models import SnitchEvent
 from engine.receipt import render
+from engine.sarif import to_sarif
 
 app = typer.Typer(help="Snitch: catches coding agents that cheat on tests.")
 hook_app = typer.Typer(help="Claude Code hook handlers (read the hook JSON on stdin).")
@@ -24,6 +26,16 @@ app.add_typer(hook_app, name="hook")
 @app.callback()
 def main() -> None:
     """Snitch: catches coding agents that cheat on tests."""
+
+
+SarifOption = Annotated[
+    Path | None, typer.Option("--sarif", help="Also write the events as SARIF here.")
+]
+
+
+def _write_sarif(path: Path | None, events: list[SnitchEvent]) -> None:
+    if path is not None:
+        path.write_text(json.dumps(to_sarif(events), indent=2))
 
 
 def _fail(message: str) -> typer.Exit:
@@ -58,7 +70,7 @@ def _export_commit(sha: str, dest: Path) -> None:
         tar.extractall(dest, filter="data")
 
 
-def _run(before: Path, after: Path, session_id: str) -> None:
+def _run(before: Path, after: Path, session_id: str, sarif: Path | None) -> None:
     """Run every detector, record the events, print the receipt, exit 1 on any event."""
     events, warnings = run_detectors(before, after, session_id)
     for warning in warnings:
@@ -73,6 +85,7 @@ def _run(before: Path, after: Path, session_id: str) -> None:
     finally:
         ledger.close()
 
+    _write_sarif(sarif, events)
     typer.echo(render(events), nl=False)
     raise typer.Exit(1 if events else 0)
 
@@ -81,6 +94,7 @@ def _run(before: Path, after: Path, session_id: str) -> None:
 def diff(
     base: Annotated[str, typer.Argument(help="Commit before the change.")],
     head: Annotated[str, typer.Argument(help="Commit after the change.")],
+    sarif: SarifOption = None,
 ) -> None:
     """Check the changes between two commits."""
     shas = [_commit(base), _commit(head)]
@@ -88,7 +102,7 @@ def diff(
         before, after = Path(tmp) / "before", Path(tmp) / "after"
         _export_commit(shas[0], before)
         _export_commit(shas[1], after)
-        _run(before, after, f"diff:{shas[0]}..{shas[1]}")
+        _run(before, after, f"diff:{shas[0]}..{shas[1]}", sarif)
 
 
 @app.command()
@@ -96,6 +110,7 @@ def check(
     staged: Annotated[
         bool, typer.Option("--staged", help="Check the staged changes against HEAD.")
     ] = False,
+    sarif: SarifOption = None,
 ) -> None:
     """Check uncommitted changes."""
     if not staged:
@@ -106,7 +121,7 @@ def check(
         before, after = Path(tmp) / "before", Path(tmp) / "after"
         _export_commit(sha, before)
         _git("-C", str(root), "checkout-index", "-a", f"--prefix={after}/")
-        _run(before, after, f"staged:{sha}")
+        _run(before, after, f"staged:{sha}", sarif)
 
 
 @app.command()
@@ -116,12 +131,14 @@ def compare(
     as_json: Annotated[
         bool, typer.Option("--json", help="Print events and warnings as JSON.")
     ] = False,
+    sarif: SarifOption = None,
 ) -> None:
     """Check the changes between two directories (no git, no ledger)."""
     for path in (before, after):
         if not path.is_dir():
             raise _fail(f"not a directory: {path}")
     events, warnings = run_detectors(before, after, "compare")
+    _write_sarif(sarif, events)
     if as_json:
         typer.echo(
             json.dumps(
