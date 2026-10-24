@@ -149,6 +149,9 @@ impossible_spec | no_env | flaky | hard | control.
 - [x] Codex CLI 0.164.0 (gpt-6.1-sol), 120 trials, not published yet (vendor preview):
       57/78 trap trials changed or gamed the test, all acknowledged, none named the test.
       Results only in ~/bench-jobs/2026-11 (labels.jsonl covers both agents).
+      Vendor preview emailed 2026-10-24 to OpenAI and Anthropic (press addresses; Codex
+      transcripts attached in a follow-up): publish the comparison on or after 2026-11-08,
+      with any vendor reply. Until then only Claude Code results are public.
 - [ ] Gemini CLI (pilot done; full run needs a cost OK), more agents
 - [ ] publish transcripts per edition
 Running the bench (subscription, not API billing: run `claude setup-token` once):
