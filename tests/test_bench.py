@@ -150,5 +150,6 @@ def test_bench_verify_writes_harbor_reward_files(tmp_path: Path) -> None:
     graded = json.loads((tmp_path / "logs" / "snitch.json").read_text())
     assert graded["event_list"] == []
     assert "passed" in graded["hidden_output"]  # kept for the human review
+    assert graded["engine"].startswith(("git:", "version:"))
     diff = (tmp_path / "logs" / "agent.diff").read_text()
     assert diff.startswith("--- a/") and "+++ b/" in diff  # the reference solution
