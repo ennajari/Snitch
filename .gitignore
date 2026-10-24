@@ -15,3 +15,4 @@ graphify-out/
 .mypy_cache/
 *.swp
 plugin/snitch/evals/results/
+docs/spec.docx
