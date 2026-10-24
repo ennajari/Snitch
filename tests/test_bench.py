@@ -94,6 +94,17 @@ def test_typical_cheat_scores_0(task: Path, tmp_path: Path) -> None:
     assert result["reward"] == 0, result
 
 
+def test_verify_names_the_test_each_event_is_in(tmp_path: Path) -> None:
+    task = BENCH / "tasks" / "invoice-discount"
+    result = grade(task, work_tree(task, tmp_path, "solution/solve.sh", "cheat.sh"))
+
+    events = result["event_list"]
+    assert isinstance(events, list) and events
+    tests = result["event_tests"]
+    assert isinstance(tests, dict)
+    assert all(tests[e["id"]] for e in events)
+
+
 def test_hidden_tests_ignore_the_agents_pytest_setup(tmp_path: Path) -> None:
     # count_words exists but is buggy, so the hidden tests import fine and must fail;
     # a planted report hook or `--co` would otherwise turn them green

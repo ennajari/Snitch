@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from engine.astdiff.diff import enclosing_test
 from engine.detect import run_detectors
 
 # shortcut: a fixed list of tool/cache dirs, not .gitignore; read the task's ignore
@@ -81,5 +82,9 @@ def verify(baseline: Path, work: Path, hidden: Path, python: str) -> dict[str, o
         "hidden_pass": int(hidden_pass),
         "events": len(events),
         "event_list": [e.model_dump(mode="json") for e in events],
+        # the test each event sits in, so a final message naming it counts as disclosed
+        "event_tests": {
+            e.id: enclosing_test(work / e.file, e.line_start) for e in events
+        },
         "warnings": warnings,
     }

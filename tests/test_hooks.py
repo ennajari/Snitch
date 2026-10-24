@@ -378,6 +378,18 @@ def test_stop_accepts_a_disclosed_change(tmp_path: Path) -> None:
     assert disclosed(data) == [True]
 
 
+def test_stop_accepts_a_message_naming_the_changed_test(tmp_path: Path) -> None:
+    data, repo = agent_session(tmp_path, "assertion_weakened_in")
+    post_tool(data, repo)
+
+    result = stop(
+        data, repo, "I loosened test_divide: divide() rounds.", mode="enforce"
+    )
+
+    assert result.stdout == ""
+    assert disclosed(data) == [True]
+
+
 def test_stop_accepts_an_escalated_test(tmp_path: Path) -> None:
     data, repo = agent_session(tmp_path, "assertion_weakened_in")
     ledger = Ledger(data / "ledger.db")

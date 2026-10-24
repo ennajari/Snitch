@@ -102,6 +102,23 @@ def _asserts(fn: Node) -> list[Node]:
     ]
 
 
+def enclosing_test(path: Path, line: int) -> str | None:
+    """Name of the test function around `line` (1-based) in `path`, if there is one."""
+    if not path.is_file():
+        return None
+    tree = PARSER.parse(path.read_bytes())
+    for node in _walk(tree.root_node):
+        name = node.child_by_field_name("name")
+        if (
+            node.type == "function_definition"
+            and name is not None
+            and _text(name).startswith("test")
+            and node.start_point.row < line <= node.end_point.row + 1
+        ):
+            return _text(name)
+    return None
+
+
 def source_changed(before_repo: Path, after_repo: Path) -> bool:
     """Whether any non-test .py file differs between the two repos."""
 

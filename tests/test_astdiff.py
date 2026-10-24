@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from engine.astdiff import diff_ast
+from engine.astdiff.diff import enclosing_test
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPARED = {
@@ -58,3 +59,11 @@ def test_astdiff_fixture(name: str, tmp_path: Path) -> None:
     events = [e.model_dump(include=COMPARED) for e in diff_ast(before, after)]
 
     assert events == expected
+
+
+def test_test_at_finds_the_enclosing_test() -> None:
+    path = FIXTURES / "assertion_weakened_in" / "after" / "test_calc.py"
+
+    assert enclosing_test(path, 9) == "test_divide"
+    assert enclosing_test(path, 1) is None  # the import line
+    assert enclosing_test(path.with_name("missing.py"), 1) is None

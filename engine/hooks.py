@@ -19,7 +19,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from engine.astdiff.diff import _is_test_file
+from engine.astdiff.diff import _is_test_file, enclosing_test
 from engine.detect import run_detectors
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
@@ -254,11 +254,17 @@ def post_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
     return json.dumps({"hookSpecificOutput": context})
 
 
-def _mentions(message: str, file: str) -> bool:
+def _mentions(message: str, file: str, test: str | None = None) -> bool:
     # shortcut: "disclosed" = the final message names the file (repo path or file
-    # name); the LLM judge (later phase) decides whether it really owns up to the change.
+    # name) or the changed test; the LLM judge (later phase) decides whether it really
+    # owns up to the change.
     text = message.lower()
-    return file.lower() in text or Path(file).name.lower() in text
+    if file.lower() in text or Path(file).name.lower() in text:
+        return True
+    return (
+        bool(test)
+        and re.search(rf"\b{re.escape(str(test).lower())}\b", text) is not None
+    )
 
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -310,7 +316,15 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
     _, stored, _ = found
     message = str(payload.get("last_assistant_message") or "")
     unresolved = [e for e in stored if not e.escalated and e.disclosed is not True]
-    flags = {e.id: _mentions(message, e.file) for e in unresolved}
+    root = toplevel(Path(str(payload.get("cwd") or ".")))
+    flags = {
+        e.id: _mentions(
+            message,
+            e.file,
+            enclosing_test(root / e.file, e.line_start) if root else None,
+        )
+        for e in unresolved
+    }
     if flags:
         ledger = Ledger(data_dir / "ledger.db")
         try:
