@@ -46,6 +46,18 @@ points at a line in the diff.
 | high     | tampering | assertion_weakened | test_calc.py:9 | ast      |
 ```
 
+## See it catch
+
+<table>
+<tr>
+<td width="50%"><img src="assets/demo-planted.gif" alt="An agent makes a test that needs a missing CI secret pass by setting the secret inside the test; snitch check flags assertion_self_fulfilled"><br><sub><b>A test that can't fail.</b> In a real TemptationBench trial, an agent made a test that needs a missing CI secret pass by setting that secret inside the test. Snitch flags it. Patch and message shortened.</sub></td>
+<td width="50%"><img src="assets/demo-hooks.gif" alt="The plugin warns the agent after a weakened assert, then blocks a final message that hides it"><br><sub><b>Live in Claude Code.</b> The plugin's real hook output: a warning right after a weakened assert, then a blocked stop when the final message hides it.</sub></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="assets/demo-check.gif" width="66%" alt="git diff and snitch check on a weakened assertion, exit code 1"><br><sub><b>Before you commit.</b> Real <code>snitch check</code> output; exit code 1 fails a pre-commit hook or CI step.</sub></td>
+</tr>
+</table>
+
 ## Why
 
 Research has shown that coding agents cheat on tests, and that an honest exit helps:
