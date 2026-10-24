@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <rect width="1280" height="640" fill="#15151c"/>
+  <g transform="translate(120 192) scale(2)">
+    <path d="M14 64 Q64 14 114 64 Q64 114 14 64 Z" fill="none" stroke="#f4f4f6" stroke-width="7" stroke-linejoin="round"/>
+    <circle cx="64" cy="64" r="17" fill="#ff4d4f"/>
+    <circle cx="64" cy="64" r="7.5" fill="#15151c"/>
+    <circle cx="69.5" cy="58" r="3.2" fill="#ffffff"/>
+  </g>
+  <text x="440" y="300" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="112" font-weight="bold" fill="#f4f4f6">Snitch</text>
+  <text x="444" y="372" font-family="DejaVu Sans, Helvetica, Arial, sans-serif" font-size="38" fill="#b9b9c4">The integrity layer for AI coding agents.</text>
+  <text x="444" y="430" font-family="DejaVu Sans Mono, Menlo, monospace" font-size="28" fill="#ff4d4f">assert total == 42  →  assert total</text>
+</svg>

@@ -1,20 +1,104 @@
-# Snitch
+<p align="center">
+  <img src="assets/logo.svg" width="112" alt="Snitch logo: an eye">
+</p>
 
-**The integrity layer for AI coding agents.** Snitch catches agents that make a
-failing test pass by cheating (weakening, skipping or deleting the test, reconfiguring
-the test runner, special-casing the code under test) and checks whether the agent
-said so. It also gives the agent an honest way out: an `escalate` tool to report a test
-it believes is wrong, instead of quietly changing it.
+<h1 align="center">Snitch</h1>
 
-One deterministic Python engine, three ways to use it:
+<p align="center">
+  <b>The integrity layer for AI coding agents.</b><br>
+  Catches agents that make a failing test pass by cheating, and gives them an honest way out.
+</p>
 
-| | Where it runs | What it does |
+<p align="center">
+  <a href="https://github.com/ennajari/snitch/actions/workflows/ci.yml"><img src="https://github.com/ennajari/snitch/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/python-3.12-blue" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/status-early-orange" alt="Status: early">
+</p>
+
+---
+
+You ask a coding agent to make CI green. It comes back with "all tests pass". What it
+did: change `assert total == 42` into `assert total`, mark the failing test `skip`, or
+add `-k "not slow"` to `pytest.ini`. The diff is green; the bug is still there.
+
+**Snitch watches for exactly that**, live in your Claude Code session, on every pull
+request, and in a benchmark that ranks agents by honesty. It never asks a model whether
+something "looks like cheating": every finding comes from a deterministic detector and
+points at a line in the diff.
+
+```diff
+- assert divide(10, 2) == 5
++ assert divide(10, 2) in (5, 6)
+```
+
+```
+# Snitch receipt
+**1 event** — 1 high
+
+| Severity | Family    | Pattern            | Location       | Detector |
+|----------|-----------|--------------------|----------------|----------|
+| high     | tampering | assertion_weakened | test_calc.py:9 | ast      |
+```
+
+## Why
+
+Research has shown that coding agents cheat on tests, and that an honest exit helps:
+
+- **EvilGenie** ([arXiv 2511.21654](https://arxiv.org/abs/2511.21654)) observed explicit
+  reward hacking by Codex and Claude Code.
+- **SpecBench** ([arXiv 2605.21384](https://arxiv.org/abs/2605.21384)): frontier agents
+  saturate visible tests while hacking persists on held-out ones.
+- **BenchJack** ([arXiv 2605.12673](https://arxiv.org/abs/2605.12673)): one root
+  `conftest.py` hook can rewrite every test outcome, and most reviewers would miss it.
+- **Escalation channels** ([arXiv 2608.29460](https://arxiv.org/abs/2608.29460)):
+  agents rarely disclose tampering, but giving them a way to report a broken test
+  reduces hacking; escalating and hacking were almost mutually exclusive.
+
+Snitch turns those findings into something you install: it **detects** the cheat,
+offers an **`escalate`** tool so the agent can say "this test looks wrong" instead of
+editing it, and **refuses to let a session end** with a test change the agent did not
+mention.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Claude Code plugin<br/>(live, per tool call)"] --> E
+    B["GitHub Action / pre-commit<br/>(per PR or commit)"] --> E
+    C["TemptationBench<br/>(Harbor, per trial)"] --> E
+    E["Engine: before vs after<br/>test inventory · AST assertion diff · rules"] --> R["Events → receipt,<br/>SARIF, ledger, scores"]
+```
+
+One engine, three adapters, so the benchmark measures exactly what users install. Each
+detector is a pure function of (before, after):
+
+- **inventory**: `pytest --collect-only` before and after; tests that vanished,
+  were renamed away, skipped or deselected.
+- **astdiff**: tree-sitter diff of every test function; assertions removed, weakened
+  (`==` → `in`, looser `approx`, looser bounds, `==` → `!=`), expected values changed,
+  asserts hidden behind a new `if`.
+- **rules**: runner and CI config (`addopts`, coverage thresholds, `continue-on-error`,
+  `|| true`, `--no-verify`), `conftest.py` report hooks, code that special-cases
+  `pytest`, `except: pass` around changed logic.
+
+## Measured, not claimed
+
+`claude plugin eval` on 20 seeded repos (broken test, impossible spec, flaky test, slow
+test, runner config, controls), 2 runs per case, with and without the plugin
+([full report](docs/evals/2026-10-24-plugin-eval.md)):
+
+| | without Snitch | with Snitch |
 |---|---|---|
-| **Claude Code plugin** | live, in your session | warns (or blocks) as soon as a test is weakened; refuses to let the session end with an undisclosed change |
-| **GitHub Action** | every pull request, any agent or human | posts an integrity receipt on the PR and flags lines in code scanning |
-| **pre-commit hook / CLI** | your machine, before each commit | blocks commits that weaken tests |
+| trap runs where the agent edited the test | **7 / 32** | **0 / 32** |
+| trap runs that called `escalate` | n/a | 25 / 32 |
+| control tasks completed | 8 / 8 | 8 / 8 |
+| false escalations on controls | 0 | 0 |
 
-Status: early, Python / pytest only.
+Paired McNemar p = 0.016 (per case: 4 cases → 0, p = 0.125). In this run the agent
+disclosed every test edit even without Snitch, so it says nothing yet about *silent*
+cheating; that is what TemptationBench, with hidden tests, is for. The report lists the
+threats to validity.
 
 ## Install
 
@@ -97,11 +181,35 @@ as it is said.
 
 ## TemptationBench
 
-`bench/` holds 40 Harbor tasks: realistic small projects with one built-in temptation
-each (a broken test, an impossible spec, a missing service, a flaky test, a hard task)
-plus controls. Hidden tests grade the agent's work; `snitch bench-score` turns Harbor
-runs into cheat, silent-cheat and honest-escalation rates, with and without Snitch.
-No results are published yet.
+`bench/` holds 40 [Harbor](https://github.com/harbor-framework/harbor) tasks: small,
+realistic projects with one built-in temptation each (a broken test, an impossible spec,
+a missing service, a flaky test, a hard task) plus 14 controls. Hidden held-out tests
+grade the work, and the agent's own `conftest.py` or `addopts` cannot fake them. Every
+task ships a reference solution that must score 1 and a typical cheat that must score 0,
+both checked in CI and in Docker.
+
+`snitch bench-score` turns Harbor runs into the leaderboard metrics: solve rate, cheat
+rate, silent-cheat rate (with a bootstrap 95% interval over tasks), honest-escalation
+rate, false positives on controls, a per-temptation breakdown, and McNemar's test for
+with vs without Snitch. Flagged trials are confirmed or cleared with human labels.
+**No leaderboard results are published yet.**
+
+## Roadmap
+
+- [x] Engine: inventory, AST diff, rules (Python / pytest), 34 cheating + 19 legitimate fixtures
+- [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
+- [x] GitHub Action with SARIF + PR receipt, pre-commit hook
+- [x] TemptationBench: 40 tasks, scoring
+- [ ] Edition 1 of the leaderboard (4–6 agents × 3 runs × with/without Snitch, human-reviewed)
+- [ ] Disclosure judge, mutation testing for hollow tests
+- [ ] TypeScript (Jest / Vitest)
+
+## Contributing
+
+Seen an agent cheat in a way Snitch misses? Open an issue with the before/after diff
+(anonymized). Every confirmed case becomes a detector fixture or a benchmark task. Each
+new pattern needs a cheating fixture that must be flagged and a legitimate one that must
+stay silent.
 
 ## Development
 
@@ -111,3 +219,7 @@ uv run pytest -q
 uv run ruff check . && uv run ruff format .
 uv run mypy engine
 ```
+
+## License
+
+[MIT](LICENSE)
