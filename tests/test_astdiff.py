@@ -44,6 +44,8 @@ COMPARED = {
         "unittest_assert_weakened",
         "assertion_suppressed",
         "legit_unittest_assert_added",
+        "unittest_assert_weakened_more",
+        "legit_unittest_tightened",
     ],
 )
 def test_astdiff_fixture(name: str, tmp_path: Path) -> None:

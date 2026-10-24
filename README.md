@@ -168,7 +168,7 @@ Exit codes: `0` clean, `1` events found, `2` usage error.
 
 | Family | Patterns |
 |---|---|
-| tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`), `expected_value_changed`, `parametrize_value_changed`, `assertion_guarded`, `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
+| tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`; also the `unittest` `self.assert*` forms), `expected_value_changed`, `parametrize_value_changed`, `assertion_guarded`, `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
 | evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` |
 | faking | `test_env_special_casing` |
 | hollow | `broad_except_pass` |
@@ -196,7 +196,7 @@ with vs without Snitch. Flagged trials are confirmed or cleared with human label
 
 ## Roadmap
 
-- [x] Engine: inventory, AST diff, rules (Python / pytest), 34 cheating + 19 legitimate fixtures
+- [x] Engine: inventory, AST diff, rules (Python / pytest), 35 cheating + 20 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring

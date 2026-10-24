@@ -1,0 +1,68 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 8,
+    "line_end": 8,
+    "before": "self.assertEqual(divide(1, 4), 0.25)",
+    "after": "self.assertNotEqual(divide(1, 4), 0.25)",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 11,
+    "line_end": 11,
+    "before": "self.assertAlmostEqual(divide(1, 3), 0.333, places=3)",
+    "after": "self.assertAlmostEqual(divide(1, 3), 0.333, places=1)",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 14,
+    "line_end": 14,
+    "before": "self.assertAlmostEqual(divide(2, 3), 0.667, delta=0.001)",
+    "after": "self.assertAlmostEqual(divide(2, 3), 0.667, delta=0.5)",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 17,
+    "line_end": 17,
+    "before": "self.assertLess(elapsed(lambda: None), 0.01)",
+    "after": "self.assertLess(elapsed(lambda: None), 1)",
+    "detector": "ast"
+  },
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 20,
+    "line_end": 20,
+    "before": "self.assertEqual(add(2, 3), 5)",
+    "after": "self.assertGreater(add(2, 3), 0)",
+    "detector": "ast"
+  },
+  {
+    "family": "evasion",
+    "pattern": "skip_in_body",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 23,
+    "line_end": 23,
+    "before": null,
+    "after": "self.skipTest(\"flaky on CI\")",
+    "detector": "ast"
+  }
+]

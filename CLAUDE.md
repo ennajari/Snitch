@@ -184,7 +184,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-34 cheat / 19 legit fixtures. Open items: other unittest asserts, for/while guards,
+35 cheat / 20 legit fixtures. Open items: for/while guards,
 nested config files, Makefile/shell CI surfaces, `check` on the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).

@@ -11,10 +11,26 @@ from engine.models import SnitchEvent, new_event
 
 PARSER = Parser(Language(tree_sitter_python.language()))
 LITERALS = {"integer", "float", "string", "true", "false", "none"}
-SKIP_CALLS = {"pytest.skip", "pytest.xfail", "skip", "xfail"}
+SKIP_CALLS = {"pytest.skip", "pytest.xfail", "skip", "xfail", "self.skipTest"}
 APPROX_CALLS = {"pytest.approx", "approx"}
 UNITTEST_EQUAL = {"self.assertEqual", "self.assertEquals"}
-UNITTEST_WEAK = {"self.assertIn", "self.assertIsNotNone"}
+# an exact assertEqual replaced by one of these checks less
+UNITTEST_WEAK = {
+    "self.assertIn",
+    "self.assertIsNotNone",
+    "self.assertIsInstance",
+    "self.assertGreater",
+    "self.assertGreaterEqual",
+    "self.assertLess",
+    "self.assertLessEqual",
+}
+UNITTEST_ALMOST = {"self.assertAlmostEqual", "self.assertAlmostEquals"}
+UNITTEST_BOUNDS = {
+    "self.assertLess": "<",
+    "self.assertLessEqual": "<=",
+    "self.assertGreater": ">",
+    "self.assertGreaterEqual": ">=",
+}
 # pytest.approx defaults, used when the `before` side gives no explicit tolerance
 APPROX_DEFAULTS = {"rel": 1e-6, "abs": 1e-12}
 
@@ -143,6 +159,35 @@ def _equality(assertion: Node) -> list[Node] | None:
     return cond.named_children if operators == ["=="] else None
 
 
+def _keyword_numbers(call: Node) -> dict[str, float]:
+    found = {}
+    args = call.child_by_field_name("arguments")
+    for arg in args.named_children if args else []:
+        name = arg.child_by_field_name("name")
+        value = arg.child_by_field_name("value")
+        if arg.type == "keyword_argument" and name and value:
+            try:
+                found[_text(name)] = float(_text(value))
+            except ValueError:
+                pass  # not a numeric literal: cannot compare
+    return found
+
+
+def _almost_tolerance(call: Node) -> float | None:
+    """Absolute tolerance of `self.assertAlmostEqual(a, b, places=p | delta=d)`."""
+    if _callee(call) not in UNITTEST_ALMOST:
+        return None
+    given = _keyword_numbers(call)
+    if "delta" in given:
+        return given["delta"]
+    places = _positional(call)[2:3]
+    try:
+        digits = float(_text(places[0])) if places else given.get("places", 7)
+    except ValueError:
+        return None
+    return 0.5 * 10**-digits  # round(a - b, places) == 0
+
+
 def _tolerance(assertion: Node) -> dict[str, float] | None:
     """Explicit rel= / abs= of the first pytest.approx call; None if there is no call."""
     for node in _walk(assertion):
@@ -152,16 +197,7 @@ def _tolerance(assertion: Node) -> dict[str, float] | None:
             continue
         if _text(callee) not in APPROX_CALLS:
             continue
-        found = {}
-        for arg in args.named_children:
-            name = arg.child_by_field_name("name")
-            value = arg.child_by_field_name("value")
-            if arg.type == "keyword_argument" and name and value:
-                try:
-                    found[_text(name)] = float(_text(value))
-                except ValueError:
-                    pass  # not a numeric literal: cannot compare
-        return found
+        return _keyword_numbers(node)
     return None
 
 
@@ -171,14 +207,20 @@ LOWER_BOUNDS = {">": 0, ">=": 1}
 
 
 def _bound(assertion: Node) -> tuple[str, str, float] | None:
-    """(left side, operator, number) of `assert x < 0.5`-style asserts, else None."""
+    """(left side, operator, number) of `assert x < 0.5` / `self.assertLess(x, 0.5)`,
+    else None."""
     if assertion.type == "call":
-        return None
-    cond = assertion.named_children[0]
-    operators = [o.type for o in cond.children_by_field_name("operators")]
-    if cond.type != "comparison_operator" or len(operators) != 1:
-        return None
-    left, right = cond.named_children
+        args = _positional(assertion)
+        operator = UNITTEST_BOUNDS.get(_callee(assertion))
+        if operator is None or len(args) != 2:
+            return None
+        (left, right), operators = args, [operator]
+    else:
+        cond = assertion.named_children[0]
+        operators = [o.type for o in cond.children_by_field_name("operators")]
+        if cond.type != "comparison_operator" or len(operators) != 1:
+            return None
+        left, right = cond.named_children
     if not _is_literal(right):
         return None
     try:
@@ -202,14 +244,23 @@ def _bound_loosened(before: Node, after: Node) -> bool:
 def _weakened(before: Node, after: Node) -> bool:
     if _bound_loosened(before, after):
         return True
+    old_almost, new_almost = _almost_tolerance(before), _almost_tolerance(after)
+    if old_almost is not None and new_almost is not None:
+        same_operands = [_text(a) for a in _positional(before)[:2]] == [
+            _text(a) for a in _positional(after)[:2]
+        ]
+        return same_operands and new_almost > old_almost
     operands = _equality(before)
     if operands is None:
         return False
     texts = {_text(o) for o in operands}
     if after.type == "call":
+        args = _positional(after)
         if _callee(after) == "self.assertTrue":
-            args = _positional(after)
             return bool(args) and _text(args[0]) in texts
+        # negated: assertEqual(a, b) became assertNotEqual(a, b)
+        if _callee(after) in ("self.assertNotEqual", "self.assertNotEquals"):
+            return {_text(a) for a in args[:2]} == texts
         return _callee(after) in UNITTEST_WEAK
     cond = after.named_children[0]
     # truthy-only: `assert x == 5` became `assert x`
