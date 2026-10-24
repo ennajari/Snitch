@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_calc.py",
+    "line_start": 5,
+    "line_end": 5,
+    "before": "assert add(2, 2) == 4",
+    "after": "assert add(2, 2) != 4",
+    "detector": "ast"
+  }
+]

@@ -30,6 +30,8 @@ COMPARED = {
         "assertion_weakened_is_not_none",
         "assertion_weakened_bound",
         "legit_bound_tightened",
+        "assertion_weakened_negated",
+        "legit_inequality_tightened",
         "expected_value_changed",
         "skip_in_body",
         "assertion_guarded",

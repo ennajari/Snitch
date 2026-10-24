@@ -221,6 +221,9 @@ def _weakened(before: Node, after: Node) -> bool:
             return True
         if operators == ["is not"] and cond.named_children[-1].type == "none":
             return True
+        # negated: `assert a == b` became `assert a != b`
+        if operators == ["!="] and {_text(o) for o in cond.named_children} == texts:
+            return True
     old, new = _tolerance(before), _tolerance(after)
     if old is None or new is None:
         return False
