@@ -35,6 +35,8 @@ COMPARED = {
         "legit_addopts_verbose",
         "legit_coverage_raised",
         "legit_ci_edit",
+        "ci_shell_or_true",
+        "legit_shell_edit",
         "legit_env_var_read",
         "legit_narrow_except",
         "addopts_changed_pyproject",

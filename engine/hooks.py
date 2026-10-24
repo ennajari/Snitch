@@ -23,6 +23,7 @@ from engine.astdiff.diff import _is_test_file
 from engine.detect import run_detectors
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
+from engine.rules.diff import TEST_RUNNER
 
 SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 # session baselines are full copies of the repo: drop them after two idle weeks
@@ -255,10 +256,6 @@ def _mentions(message: str, file: str) -> bool:
 
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-TEST_COMMAND = re.compile(
-    r"\b(pytest|py\.test|unittest|tox|nox|make\s+(test|check)|vitest|jest"
-    r"|(npm|pnpm|yarn|bun)\s+(run\s+)?test|go\s+test|cargo\s+test)\b"
-)
 PASS_CLAIM = re.compile(
     r"\b(tests?|test suite|suite)\b[^.\n]{0,40}?\b(pass(es|ed|ing)?|green)\b"
     r"|\b\d+ passed\b",
@@ -293,7 +290,7 @@ def _claims_untested_pass(transcript: object, message: str) -> bool:
                 edited, tested = True, False
             elif part.get("name") == "Bash":
                 command = str((part.get("input") or {}).get("command", ""))
-                tested = tested or bool(TEST_COMMAND.search(command))
+                tested = tested or bool(TEST_RUNNER.search(command))
     return edited and not tested
 
 

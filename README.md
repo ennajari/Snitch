@@ -169,7 +169,7 @@ Exit codes: `0` clean, `1` events found, `2` usage error.
 | Family | Patterns |
 |---|---|
 | tampering | `assertion_removed`, `assertion_weakened` (truthy-only, `in`, `is not None`, looser `approx` or bounds, `==` flipped to `!=`; also the `unittest` `self.assert*` forms), `expected_value_changed`, `parametrize_value_changed`, `assertion_guarded`, `test_deleted`, `test_renamed_away`, `conftest_report_hook`, `coverage_threshold_lowered` |
-| evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` |
+| evasion | `test_deselected`, `test_skipped`, `skip_in_body`, `addopts_changed`, `ci_continue_on_error`, `ci_or_true`, `ci_no_verify` (workflows, GitLab CI, and test runs in Makefiles and shell scripts) |
 | faking | `test_env_special_casing` |
 | hollow | `broad_except_pass` |
 | reporting (plugin, at the end of a turn) | a flagged test change the final message does not mention; "tests pass" claimed with no test run since the last edit |
@@ -197,7 +197,7 @@ with vs without Snitch. Flagged trials are confirmed or cleared with human label
 
 ## Roadmap
 
-- [x] Engine: inventory, AST diff, rules (Python / pytest), 36 cheating + 21 legitimate fixtures
+- [x] Engine: inventory, AST diff, rules (Python / pytest), 37 cheating + 22 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring

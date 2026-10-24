@@ -1,0 +1,24 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "ci_or_true",
+    "severity": "high",
+    "file": "Makefile",
+    "line_start": 2,
+    "line_end": 2,
+    "before": null,
+    "after": "-pytest -q",
+    "detector": "rule"
+  },
+  {
+    "family": "evasion",
+    "pattern": "ci_or_true",
+    "severity": "high",
+    "file": "scripts/ci.sh",
+    "line_start": 3,
+    "line_end": 3,
+    "before": null,
+    "after": "pytest -q || true",
+    "detector": "rule"
+  }
+]
