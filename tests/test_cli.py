@@ -186,3 +186,20 @@ def test_compare_missing_dir_is_a_usage_error(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     assert "nope" in result.output
+
+
+def test_strict_fails_an_incomplete_check(tmp_path: Path) -> None:
+    # collection cannot import the tests, so the inventory detector cannot run
+    for side in ("before", "after"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "test_x.py").write_text(
+            "import not_installed\n\n\ndef test_x():\n    assert 1 == 1\n"
+        )
+    args = ["compare", str(tmp_path / "before"), str(tmp_path / "after")]
+
+    lenient = runner.invoke(app, args)
+    strict = runner.invoke(app, [*args, "--strict"])
+
+    assert lenient.exit_code == 0, lenient.output
+    assert strict.exit_code == 3, strict.output
+    assert "incomplete check" in strict.stderr

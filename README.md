@@ -152,7 +152,7 @@ jobs:
       - uses: ennajari/snitch@master
 ```
 
-Inputs: `fail-on-events` (default `true`), `comment`, `upload-sarif`, `base`, `head`.
+Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `false`), `comment`, `upload-sarif`, `base`, `head`.
 Output: `events`.
 
 ### pre-commit
@@ -173,7 +173,7 @@ snitch diff <base> <head> [--sarif out.sarif]
 snitch compare <before-dir> <after-dir> [--json]
 ```
 
-Exit codes: `0` clean, `1` events found, `2` usage error.
+Exit codes: `0` clean, `1` events found, `2` usage error, `3` incomplete check (only with `--strict`: a detector could not run, for example because the repo's tests do not import).
 
 ## What it flags
 

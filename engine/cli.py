@@ -33,6 +33,29 @@ SarifOption = Annotated[
 ]
 
 
+StrictOption = Annotated[
+    bool,
+    typer.Option(
+        "--strict",
+        help="Exit 3 when a detector could not run (an incomplete check), "
+        "instead of 0 when no event was found.",
+    ),
+]
+
+
+def _exit(events: list[SnitchEvent], warnings: list[str], strict: bool) -> None:
+    """1: events found. 3 (strict only): nothing found, but not every detector ran, so
+    a clean result would be a claim the check cannot back. 0: clean."""
+    if events:
+        raise typer.Exit(1)
+    if strict and warnings:
+        typer.echo(
+            "error: incomplete check (--strict): a detector could not run", err=True
+        )
+        raise typer.Exit(3)
+    raise typer.Exit(0)
+
+
 def _write_sarif(path: Path | None, events: list[SnitchEvent]) -> None:
     if path is not None:
         path.write_text(json.dumps(to_sarif(events), indent=2))
@@ -70,7 +93,9 @@ def _export_commit(sha: str, dest: Path) -> None:
         tar.extractall(dest, filter="data")
 
 
-def _run(before: Path, after: Path, session_id: str, sarif: Path | None) -> None:
+def _run(
+    before: Path, after: Path, session_id: str, sarif: Path | None, strict: bool
+) -> None:
     """Run every detector, record the events, print the receipt, exit 1 on any event."""
     events, warnings = run_detectors(before, after, session_id)
     for warning in warnings:
@@ -87,7 +112,7 @@ def _run(before: Path, after: Path, session_id: str, sarif: Path | None) -> None
 
     _write_sarif(sarif, events)
     typer.echo(render(events), nl=False)
-    raise typer.Exit(1 if events else 0)
+    _exit(events, warnings, strict)
 
 
 @app.command()
@@ -95,6 +120,7 @@ def diff(
     base: Annotated[str, typer.Argument(help="Commit before the change.")],
     head: Annotated[str, typer.Argument(help="Commit after the change.")],
     sarif: SarifOption = None,
+    strict: StrictOption = False,
 ) -> None:
     """Check the changes between two commits."""
     shas = [_commit(base), _commit(head)]
@@ -102,7 +128,7 @@ def diff(
         before, after = Path(tmp) / "before", Path(tmp) / "after"
         _export_commit(shas[0], before)
         _export_commit(shas[1], after)
-        _run(before, after, f"diff:{shas[0]}..{shas[1]}", sarif)
+        _run(before, after, f"diff:{shas[0]}..{shas[1]}", sarif, strict)
 
 
 @app.command()
@@ -111,6 +137,7 @@ def check(
         bool, typer.Option("--staged", help="Check the staged changes against HEAD.")
     ] = False,
     sarif: SarifOption = None,
+    strict: StrictOption = False,
 ) -> None:
     """Check uncommitted changes against HEAD: the working tree (tracked and untracked,
     not ignored files), or with --staged only what is staged."""
@@ -125,7 +152,9 @@ def check(
             _git("-C", str(root), "checkout-index", "-a", f"--prefix={after}/")
         else:
             snapshot(root, after)
-        _run(before, after, f"{'staged' if staged else 'worktree'}:{sha}", sarif)
+        _run(
+            before, after, f"{'staged' if staged else 'worktree'}:{sha}", sarif, strict
+        )
 
 
 @app.command()
@@ -136,6 +165,7 @@ def compare(
         bool, typer.Option("--json", help="Print events and warnings as JSON.")
     ] = False,
     sarif: SarifOption = None,
+    strict: StrictOption = False,
 ) -> None:
     """Check the changes between two directories (no git, no ledger)."""
     for path in (before, after):
@@ -156,7 +186,7 @@ def compare(
         for warning in warnings:
             typer.echo(f"warning: {warning}", err=True)
         typer.echo(render(events), nl=False)
-    raise typer.Exit(1 if events else 0)
+    _exit(events, warnings, strict)
 
 
 @app.command("bench-verify")

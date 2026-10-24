@@ -21,6 +21,9 @@ inputs:
   upload-sarif:
     description: Upload the events to GitHub code scanning (needs security-events write).
     default: "true"
+  strict:
+    description: Fail when a detector could not run (an incomplete check) instead of passing.
+    default: "false"
 
 outputs:
   events:
@@ -37,16 +40,23 @@ runs:
       env:
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
+        STRICT: ${{ inputs.strict }}
       run: |
         if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
           echo "::error::base commit $BASE is not in the checkout; use actions/checkout with fetch-depth: 0"
           exit 2
         fi
         set +e
+        strict=()
+        if [ "$STRICT" = "true" ]; then strict=(--strict); fi
         uv run --quiet --project "$GITHUB_ACTION_PATH" snitch diff "$BASE" "$HEAD" \
-          --sarif snitch.sarif > snitch-receipt.md
+          --sarif snitch.sarif "${strict[@]}" > snitch-receipt.md
         status=$?
         set -e
+        if [ "$status" -eq 3 ]; then
+          echo "::error::Snitch could not run every detector (strict mode); see the log above."
+          exit 3
+        fi
         if [ "$status" -gt 1 ]; then exit "$status"; fi
         events=$(python3 -c "import json; print(len(json.load(open('snitch.sarif'))['runs'][0]['results']))")
         echo "events=$events" >> "$GITHUB_OUTPUT"
