@@ -202,7 +202,7 @@ def bench_verify(
     ] = None,
 ) -> None:
     """TemptationBench verifier: grade an agent's work tree after a trial."""
-    from engine.bench import verify
+    from engine.bench import agent_diff, verify
 
     for path in (baseline, work, hidden):
         if not path.is_dir():
@@ -213,6 +213,8 @@ def bench_verify(
         out.mkdir(parents=True, exist_ok=True)
         (out / "reward.json").write_text(json.dumps(numbers))
         (out / "snitch.json").write_text(json.dumps(result, indent=2))
+        # what the agent changed, for review and for re-checking with newer detectors
+        (out / "agent.diff").write_text(agent_diff(baseline, work))
     typer.echo(json.dumps(numbers))
 
 
