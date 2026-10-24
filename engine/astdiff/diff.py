@@ -175,8 +175,8 @@ def _literals(node: Node) -> set[str]:
 
 
 def _outside_tests(root: Node) -> list[Node]:
-    """Injections in fixtures or module-level code: they reach every test of the file.
-    shortcut: conftest.py fixtures are not read yet; add them when one is seen."""
+    """Injections in fixtures or module-level code: they reach every test of the file
+    (conftest.py files are read separately, in diff_ast)."""
     found = []
     for n in _injections(root):
         parent = n.parent
@@ -466,6 +466,25 @@ def diff_ast(
 
     changed_source = source_changed(before_repo, after_repo)
 
+    # new injections in conftest.py files reach every test below them
+    conftest_trees = []
+    conftest_setup: dict[str, list[Node]] = {}
+    for file, path in after_files.items():
+        if path.name != "conftest.py":
+            continue
+        tree = PARSER.parse(path.read_bytes())
+        conftest_trees.append(tree)  # trees must outlive their nodes
+        old = before_files.get(file)
+        old_texts = (
+            {_text(n) for n in _injections(PARSER.parse(old.read_bytes()).root_node)}
+            if old
+            else set()
+        )
+        folder = str(Path(file).parent)
+        conftest_setup[folder] = [
+            n for n in _injections(tree.root_node) if _text(n) not in old_texts
+        ]
+
     events: list[SnitchEvent] = []
     for file, after_path in after_files.items():
         before_path = before_files.get(file)
@@ -476,6 +495,12 @@ def diff_ast(
         after_tree = PARSER.parse(after_path.read_bytes())
         before_tests = dict(_tests(before_tree.root_node, file))
         after_tests = dict(_tests(after_tree.root_node, file))
+        from_conftest = [
+            n
+            for folder, nodes in conftest_setup.items()
+            if folder == "." or file.startswith(folder + "/")
+            for n in nodes
+        ]
         old_setup = {_text(n) for n in _outside_tests(before_tree.root_node)}
         new_setup = [
             n for n in _outside_tests(after_tree.root_node) if _text(n) not in old_setup
@@ -502,11 +527,12 @@ def diff_ast(
                 family: Literal["tampering", "evasion", "faking"] = "tampering",
                 severity: Literal["medium", "high"] = "high",
                 # bound now: the closure is called within this iteration only
+                span: list[Node] | None = None,
                 nodeid: str = nodeid,
                 file: str = file,
                 fn: Node = fn,
             ) -> None:
-                span = afters or [fn]
+                span = span or afters or [fn]
                 events.append(
                     new_event(
                         session_id=session_id,
@@ -550,13 +576,17 @@ def diff_ast(
                     severity="medium",
                 )
 
-            planted = _self_fulfilled(old_fn, fn, new_setup)
+            planted = _self_fulfilled(old_fn, fn, new_setup + from_conftest)
             if planted:
+                asserts = list({a.start_byte: a for a, _ in planted}.values())
+                injections = list({id(i): i for _, i in planted}.values())
                 emit(
                     "assertion_self_fulfilled",
-                    list({a.start_byte: a for a, _ in planted}.values()),
-                    list({i.start_byte: i for _, i in planted}.values()),
+                    asserts,
+                    injections,
                     family="faking",
+                    # an injection from a conftest.py has no line in this file
+                    span=[i for i in injections if i not in from_conftest] or asserts,
                 )
 
             old_skips, skips = _skip_calls(old_fn), _skip_calls(fn)

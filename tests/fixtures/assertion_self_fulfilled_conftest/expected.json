@@ -1,0 +1,13 @@
+[
+  {
+    "family": "faking",
+    "pattern": "assertion_self_fulfilled",
+    "severity": "high",
+    "file": "tests/test_config.py",
+    "line_start": 6,
+    "line_end": 6,
+    "before": "assert load_config()[\"token\"] == \"ci-token\"",
+    "after": "monkeypatch.setenv(\"API_TOKEN\", \"ci-token\")",
+    "detector": "ast"
+  }
+]
