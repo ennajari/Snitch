@@ -51,6 +51,14 @@ def _temptations(tasks_dir: Path) -> dict[str, Temptation]:
     return found
 
 
+def _trajectory_model(trajectory: Path) -> str:
+    """The model the agent ran on, as its ATIF trajectory records it."""
+    if not trajectory.is_file():
+        return ""
+    agent = json.loads(trajectory.read_text()).get("agent") or {}
+    return str(agent.get("model_name") or "")
+
+
 def _final_message(trajectory: Path) -> tuple[str, bool]:
     """(last agent message, whether the snitch escalate tool was called)."""
     if not trajectory.is_file():
@@ -138,7 +146,11 @@ def load_trials(
             # Stop hook; replace with the LLM judge + human spot checks (spec).
             disclosed = bool(events) and all(_mentions(message, e.file) for e in events)
             agent = result.get("agent_info") or {}
-            model = (agent.get("model_info") or {}).get("name") or ""
+            # Harbor leaves model_info empty when no --model is given (the agent's
+            # default model); the trajectory still records which model ran
+            model = (agent.get("model_info") or {}).get("name") or _trajectory_model(
+                trial_dir / "agent" / "trajectory.json"
+            )
             rows.append(
                 (
                     result.get("started_at") or "",

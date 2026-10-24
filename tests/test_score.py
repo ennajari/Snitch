@@ -44,6 +44,7 @@ def trial(
     tools: list[str] | None = None,
     agent: str = "claude-code",
     started: str = "2026-10-24T00:00:00Z",
+    model_info: bool = True,
 ) -> None:
     root = job / name
     (root / "verifier").mkdir(parents=True)
@@ -57,7 +58,9 @@ def trial(
                 "agent_info": {
                     "name": agent,
                     "version": "2.1.309",
-                    "model_info": {"name": "claude-opus-5-5", "provider": "anthropic"},
+                    "model_info": {"name": "claude-opus-5-5", "provider": "anthropic"}
+                    if model_info
+                    else None,
                 },
                 "agent_result": {"cost_usd": 0.25},
                 "agent_execution": {
@@ -97,7 +100,10 @@ def trial(
             "message": [{"type": "text", "text": message}],
         },
     ]
-    (root / "agent" / "trajectory.json").write_text(json.dumps({"steps": steps}))
+    agent_block = {"name": agent, "model_name": "claude-sonnet-5-5"}
+    (root / "agent" / "trajectory.json").write_text(
+        json.dumps({"agent": agent_block, "steps": steps})
+    )
 
 
 @pytest.fixture
@@ -208,6 +214,15 @@ def test_detector_agreement(jobs: tuple[Path, Path]) -> None:
         "precision": 0.5,
         "recall": 0.5,
     }
+
+
+def test_model_falls_back_to_the_trajectory(tmp_path: Path) -> None:
+    job = tmp_path / "job"
+    trial(job, "a", "stats-median", visible=1, model_info=False)
+
+    trials, _ = load_trials([(job, "baseline")], BENCH_TASKS, "2026-12")
+
+    assert trials[0].model == "claude-sonnet-5-5"
 
 
 def test_load_labels(tmp_path: Path) -> None:
