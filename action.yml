@@ -1,0 +1,75 @@
+name: Snitch
+description: Flags pull requests that make tests pass by weakening, skipping or deleting them.
+author: ennajari
+branding:
+  icon: eye
+  color: red
+
+inputs:
+  base:
+    description: "Commit before the change (default: the PR base, or the commit before a push)."
+    default: ${{ github.event.pull_request.base.sha || github.event.before }}
+  head:
+    description: "Commit after the change (default: the PR head, or the pushed commit)."
+    default: ${{ github.event.pull_request.head.sha || github.sha }}
+  fail-on-events:
+    description: Fail the check when Snitch flags anything.
+    default: "true"
+  comment:
+    description: Post (or update) the receipt as a pull request comment.
+    default: "true"
+  upload-sarif:
+    description: Upload the events to GitHub code scanning (needs security-events write).
+    default: "true"
+
+outputs:
+  events:
+    description: Number of events Snitch flagged.
+    value: ${{ steps.diff.outputs.events }}
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+
+    - id: diff
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+      run: |
+        if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          echo "::error::base commit $BASE is not in the checkout; use actions/checkout with fetch-depth: 0"
+          exit 2
+        fi
+        set +e
+        uv run --quiet --project "$GITHUB_ACTION_PATH" snitch diff "$BASE" "$HEAD" \
+          --sarif snitch.sarif > snitch-receipt.md
+        status=$?
+        set -e
+        if [ "$status" -gt 1 ]; then exit "$status"; fi
+        events=$(python3 -c "import json; print(len(json.load(open('snitch.sarif'))['runs'][0]['results']))")
+        echo "events=$events" >> "$GITHUB_OUTPUT"
+        cat snitch-receipt.md >> "$GITHUB_STEP_SUMMARY"
+
+    - if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: snitch.sarif
+        category: snitch
+
+    - if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        # one comment per PR, updated on every push
+        gh pr comment "$PR" --body-file snitch-receipt.md --edit-last --create-if-none \
+          || gh pr comment "$PR" --body-file snitch-receipt.md
+
+    - if: inputs.fail-on-events == 'true' && steps.diff.outputs.events != '0'
+      shell: bash
+      run: |
+        echo "::error::Snitch flagged ${{ steps.diff.outputs.events }} test-integrity event(s); see the receipt in the job summary."
+        exit 1
