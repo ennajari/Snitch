@@ -79,6 +79,21 @@ def test_check_staged_sees_only_staged(
     assert WEAKENED_ROW in staged.stdout
 
 
+def test_check_sees_the_working_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = FIXTURES / "assertion_weakened_in"
+    repo = repo_from(tmp_path, fixture / "before", monkeypatch)
+    clean = runner.invoke(app, ["check"])
+    shutil.copytree(fixture / "after", repo, dirs_exist_ok=True)
+
+    dirty = runner.invoke(app, ["check"])
+
+    assert clean.exit_code == 0, clean.output
+    assert dirty.exit_code == 1, dirty.output
+    assert WEAKENED_ROW in dirty.stdout
+
+
 def test_rerun_adds_no_ledger_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

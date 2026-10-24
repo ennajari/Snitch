@@ -112,16 +112,20 @@ def check(
     ] = False,
     sarif: SarifOption = None,
 ) -> None:
-    """Check uncommitted changes."""
-    if not staged:
-        raise _fail("only `snitch check --staged` is supported for now")
+    """Check uncommitted changes against HEAD: the working tree (tracked and untracked,
+    not ignored files), or with --staged only what is staged."""
+    from engine.hooks import snapshot
+
     sha = _commit("HEAD")
     root = Path(_git("rev-parse", "--show-toplevel"))
     with tempfile.TemporaryDirectory() as tmp:
         before, after = Path(tmp) / "before", Path(tmp) / "after"
         _export_commit(sha, before)
-        _git("-C", str(root), "checkout-index", "-a", f"--prefix={after}/")
-        _run(before, after, f"staged:{sha}", sarif)
+        if staged:
+            _git("-C", str(root), "checkout-index", "-a", f"--prefix={after}/")
+        else:
+            snapshot(root, after)
+        _run(before, after, f"{'staged' if staged else 'worktree'}:{sha}", sarif)
 
 
 @app.command()
