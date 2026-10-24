@@ -8,6 +8,8 @@ RUN uv pip install --system pytest==8.4.1
 # install themselves as usual.
 RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh | bash -s -- 2.1.310 \
     && ln -s /root/.local/bin/claude /usr/local/bin/claude
+# the other benchmarked CLIs, pinned, for the same reason
+RUN npm install -g @openai/codex@0.164.0 @google/gemini-cli@0.65.0 && npm cache clean --force
 WORKDIR /app
 COPY repo/ /app/
 RUN git init -q && git add -A \

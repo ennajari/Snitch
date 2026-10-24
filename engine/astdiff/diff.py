@@ -134,6 +134,60 @@ def source_changed(before_repo: Path, after_repo: Path) -> bool:
     return sources(before_repo) != sources(after_repo)
 
 
+# calls a test uses to set up the world: env vars, attributes, dict entries, mocks
+INJECT_CALLS = {
+    "monkeypatch.setenv",
+    "monkeypatch.setattr",
+    "monkeypatch.setitem",
+    "os.environ.setdefault",
+    "os.putenv",
+    "patch",
+    "patch.object",
+    "patch.dict",
+    "mock.patch",
+    "mock.patch.object",
+    "mock.patch.dict",
+}
+# literals too common to tie an injection to an assertion
+TRIVIAL = {"0", "1", "-1", "True", "False", "None", '""', "''"}
+
+
+def _injections(fn: Node) -> list[Node]:
+    """Setup in a test that plants a value: an injection call or `os.environ[k] = v`.
+    shortcut: decorators such as `@patch(...)` are not read; add them when one is seen."""
+    found = []
+    for n in _walk(fn):
+        if n.type == "call" and _callee(n) in INJECT_CALLS:
+            found.append(n)
+        elif n.type == "assignment":
+            left = n.child_by_field_name("left")
+            if left is not None and _text(left).startswith("os.environ["):
+                found.append(n)
+    return found
+
+
+def _literals(node: Node) -> set[str]:
+    return {
+        _text(n)
+        for n in _walk(node)
+        if n.type in ("string", "integer", "float") and _text(n) not in TRIVIAL
+    }
+
+
+def _self_fulfilled(old_fn: Node, fn: Node) -> list[tuple[Node, Node]]:
+    """(assert, new injection) pairs: an existing test now plants the very value its
+    assertion expects, so the assertion cannot fail any more (a test that needed a
+    missing CI secret now sets that secret itself)."""
+    old = {_text(n) for n in _injections(old_fn)}
+    new = [n for n in _injections(fn) if _text(n) not in old]
+    return [
+        (assertion, injection)
+        for assertion in _asserts(fn)
+        for injection in new
+        if _literals(assertion) & _literals(injection)
+    ]
+
+
 def _skip_calls(fn: Node) -> list[Node]:
     return [n for n in _walk(fn) if n.type == "call" and _callee(n) in SKIP_CALLS]
 
@@ -396,7 +450,7 @@ def diff_ast(
                 befores: list[Node],
                 afters: list[Node],
                 *,
-                family: Literal["tampering", "evasion"] = "tampering",
+                family: Literal["tampering", "evasion", "faking"] = "tampering",
                 severity: Literal["medium", "high"] = "high",
                 # bound now: the closure is called within this iteration only
                 nodeid: str = nodeid,
@@ -445,6 +499,15 @@ def diff_ast(
                     [b for b, _ in relit],
                     [a for _, a in relit],
                     severity="medium",
+                )
+
+            planted = _self_fulfilled(old_fn, fn)
+            if planted:
+                emit(
+                    "assertion_self_fulfilled",
+                    list({a.start_byte: a for a, _ in planted}.values()),
+                    list({i.start_byte: i for _, i in planted}.values()),
+                    family="faking",
                 )
 
             old_skips, skips = _skip_calls(old_fn), _skip_calls(fn)
