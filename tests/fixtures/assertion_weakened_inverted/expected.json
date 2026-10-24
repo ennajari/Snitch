@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_weakened",
+    "severity": "high",
+    "file": "test_emails.py",
+    "line_start": 9,
+    "line_end": 9,
+    "before": "assert is_valid_email(\"admin@localhost\")",
+    "after": "assert not is_valid_email(\"admin@localhost\")",
+    "detector": "ast"
+  }
+]

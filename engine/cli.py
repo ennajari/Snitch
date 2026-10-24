@@ -209,6 +209,7 @@ def bench_score(
         Arm,
         bootstrap_ci,
         detector_agreement,
+        load_disclosures,
         load_labels,
         load_trials,
         mcnemar,
@@ -221,7 +222,11 @@ def bench_score(
     if not jobs:
         raise _fail("give at least one --baseline or --with-snitch job dir")
     trials, skipped = load_trials(
-        jobs, tasks, edition, load_labels(labels) if labels else None
+        jobs,
+        tasks,
+        edition,
+        load_labels(labels) if labels else None,
+        load_disclosures(labels) if labels else None,
     )
     for note in skipped:
         typer.echo(f"skipped: {note}", err=True)

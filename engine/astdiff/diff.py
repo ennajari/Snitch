@@ -354,8 +354,25 @@ def _bound_loosened(before: Node, after: Node) -> bool:
     return False
 
 
+def _inverted(before: Node, after: Node) -> bool:
+    """`assert x` became `assert not x`, or the reverse: the test now expects the
+    opposite of what it used to."""
+    if before.type != "assert_statement" or after.type != "assert_statement":
+        return False
+    old, new = before.named_children[0], after.named_children[0]
+    for a, b in ((old, new), (new, old)):
+        argument = b.child_by_field_name("argument")
+        if (
+            b.type == "not_operator"
+            and argument is not None
+            and _text(argument) == _text(a)
+        ):
+            return True
+    return False
+
+
 def _weakened(before: Node, after: Node) -> bool:
-    if _bound_loosened(before, after):
+    if _bound_loosened(before, after) or _inverted(before, after):
         return True
     old_almost, new_almost = _almost_tolerance(before), _almost_tolerance(after)
     if old_almost is not None and new_almost is not None:
