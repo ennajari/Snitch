@@ -23,10 +23,10 @@ inputs:
     default: "true"
   strict:
     description: >-
-      Fail when a detector could not run (an incomplete check) instead of passing.
-      Set to "false" to let an incomplete check pass, e.g. when the tests need
-      packages this job does not install.
-    default: "true"
+      Fail when a detector could not run (an incomplete check). Off by default: Snitch
+      collects tests in its own environment, so a repo whose tests import third-party
+      packages cannot be collected; the receipt and a warning say so either way.
+    default: "false"
 
 outputs:
   events:
@@ -50,15 +50,21 @@ runs:
           exit 2
         fi
         set +e
-        strict=()
-        if [ "$STRICT" = "true" ]; then strict=(--strict); fi
+        # always --strict, so an incomplete check is never reported as a clean one
         uv run --quiet --project "$GITHUB_ACTION_PATH" snitch diff "$BASE" "$HEAD" \
-          --sarif snitch.sarif "${strict[@]}" > snitch-receipt.md
+          --sarif snitch.sarif --strict > snitch-receipt.md
         status=$?
         set -e
         if [ "$status" -eq 3 ]; then
-          echo "::error::Snitch could not run every detector, so this check is incomplete; see the log above. Install what the tests import before this step, or set strict: \"false\"."
-          exit 3
+          note="Incomplete check: a detector could not run (usually the tests import packages that Snitch's own environment lacks), so a deleted or skipped test may have been missed; see the job log."
+          printf '\n> **%s**\n' "$note" >> snitch-receipt.md
+          if [ "$STRICT" = "true" ]; then
+            cat snitch-receipt.md >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$note"
+            exit 3
+          fi
+          echo "::warning::$note"
+          status=0
         fi
         if [ "$status" -gt 1 ]; then exit "$status"; fi
         events=$(python3 -c "import json; print(len(json.load(open('snitch.sarif'))['runs'][0]['results']))")

@@ -174,7 +174,7 @@ jobs:
       - uses: ennajari/snitch@v1
 ```
 
-Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `true`: an incomplete check never passes silently), `comment`, `upload-sarif`, `base`, `head`.
+Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `false`: an incomplete check passes with a warning and a note in the receipt), `comment`, `upload-sarif`, `base`, `head`.
 Output: `events`.
 
 ### pre-commit
