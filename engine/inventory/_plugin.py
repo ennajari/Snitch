@@ -1,4 +1,7 @@
-"""pytest plugin run inside the target repo's collection; dumps one record per test."""
+"""pytest plugin run inside the target repo's collection; dumps one record per test.
+
+Loaded as a standalone file by the repo's own interpreter, which may be older than
+Snitch's and lacks Snitch's packages: stdlib + pytest only, Python 3.10+ syntax."""
 
 import ast
 import hashlib
@@ -12,7 +15,7 @@ import pytest
 
 OUT_ENV = "SNITCH_INVENTORY_OUT"
 
-type FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
+FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
 
 
 def fingerprint(fn: FunctionNode) -> str:
@@ -35,7 +38,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
             lines, start = inspect.getsourcelines(item.function)  # type: ignore[attr-defined]
             fn = ast.parse(textwrap.dedent("".join(lines))).body[0]
             end = start + len(lines) - 1
-            if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 body_hash = fingerprint(fn)
         except (AttributeError, OSError, TypeError, SyntaxError):
             pass  # not a plain Python function (doctest, generated test): no body to compare

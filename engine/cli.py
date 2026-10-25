@@ -13,6 +13,7 @@ import typer
 
 from engine import hooks
 from engine.detect import run_detectors
+from engine.inventory.collect import find_python
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
 from engine.receipt import render
@@ -97,7 +98,10 @@ def _run(
     before: Path, after: Path, session_id: str, sarif: Path | None, strict: bool
 ) -> None:
     """Run every detector, record the events, print the receipt, exit 1 on any event."""
-    events, warnings = run_detectors(before, after, session_id)
+    root = Path(_git("rev-parse", "--show-toplevel"))
+    events, warnings = run_detectors(
+        before, after, session_id, python=find_python(root)
+    )
     for warning in warnings:
         typer.echo(f"warning: {warning}", err=True)
 

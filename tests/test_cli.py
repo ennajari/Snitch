@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,38 @@ def test_collection_failure_warns_and_continues(
     assert result.exit_code == 1
     assert "inventory" in result.stderr
     assert WEAKENED_ROW in result.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="shell wrapper")
+def test_diff_collects_with_the_repos_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests that import a package only the repo's .venv has: the inventory detector
+    still runs (here: catches a deleted test) instead of being skipped."""
+    monkeypatch.delenv("SNITCH_PYTHON", raising=False)
+    fixture = FIXTURES / "test_deleted"
+    before = shutil.copytree(fixture / "before", tmp_path / "before")
+    after = shutil.copytree(fixture / "after", tmp_path / "after")
+    for side in (before, after):
+        (side / "conftest.py").write_text("import only_in_repo_env\n")
+        (side / ".gitignore").write_text(".venv/\n")
+    repo = repo_from(tmp_path, before, monkeypatch)
+    commit_after(repo, after)
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "only_in_repo_env.py").write_text("")
+    python = repo / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        f'#!/bin/sh\nPYTHONPATH="{site}:$PYTHONPATH" exec "{sys.executable}" "$@"\n'
+    )
+    python.chmod(0o755)
+
+    result = runner.invoke(app, ["diff", "HEAD~1", "HEAD", "--strict"])
+
+    assert "inventory detector skipped" not in result.stderr
+    assert result.exit_code == 1
+    assert "test_deleted" in result.stdout
 
 
 def test_unknown_ref_is_a_usage_error(

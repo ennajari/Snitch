@@ -39,9 +39,10 @@ def diff_inventory(
     *,
     session_id: str = "local",
     before_cache: Path | None = None,
+    python: str | None = None,
 ) -> list[SnitchEvent]:
-    before = collect(before_repo, before_cache)
-    after = collect(after_repo)
+    before = collect(before_repo, before_cache, python)
+    after = collect(after_repo, python=python)
     before_ids = {i.nodeid for i in before}
     after_by_id = {i.nodeid: i for i in after}
     now = datetime.now(UTC)

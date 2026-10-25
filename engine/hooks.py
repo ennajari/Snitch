@@ -22,6 +22,7 @@ from typing import Any
 
 from engine.astdiff.diff import _is_test_file, enclosing_test, python_file_patterns
 from engine.detect import run_detectors
+from engine.inventory.collect import find_python
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
 from engine.policy import POLICY
@@ -220,6 +221,7 @@ def _session_events(
                     session_id,
                     # the baseline never changes within a session: collect it once
                     before_cache=session / "baseline-inventory.json",
+                    python=find_python(root),
                 )
                 found = {
                     e.id: enclosing_test(current / e.file, e.line_start) for e in events

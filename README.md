@@ -138,6 +138,10 @@ Pick a mode in `/config` (needs Claude Code 2.1.271 or later):
 - `warn` (default): tell the agent and you, never block
 - `enforce`: also block edits to frozen tests and stops that hide test changes
 
+Snitch collects your tests with the repo's own `.venv/bin/python` when there is one
+(set `SNITCH_PYTHON` to use another interpreter), so tests that import your project's
+dependencies can be inventoried. That interpreter needs pytest.
+
 Freeze paths the agent must never edit in `.snitch.toml` at the repo root:
 
 ```toml
@@ -174,7 +178,7 @@ jobs:
       - uses: ennajari/snitch@v1
 ```
 
-Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `false`: an incomplete check passes with a warning and a note in the receipt), `comment`, `upload-sarif`, `base`, `head`.
+Inputs: `fail-on-events` (default `true`), `python` (an interpreter that can import your tests; default: the repo's `.venv`, else Snitch's own), `strict` (fail when a detector could not run, default `false`: an incomplete check passes with a warning and a note in the receipt), `comment`, `upload-sarif`, `base`, `head`.
 Output: `events`.
 
 ### pre-commit

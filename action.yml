@@ -21,11 +21,17 @@ inputs:
   upload-sarif:
     description: Upload the events to GitHub code scanning (needs security-events write).
     default: "true"
+  python:
+    description: >-
+      Python interpreter that can import your tests (with pytest installed), e.g. the
+      python of actions/setup-python after installing your dependencies. Default: the
+      repo's .venv if there is one, else Snitch's own.
+    default: ""
   strict:
     description: >-
-      Fail when a detector could not run (an incomplete check). Off by default: Snitch
-      collects tests in its own environment, so a repo whose tests import third-party
-      packages cannot be collected; the receipt and a warning say so either way.
+      Fail when a detector could not run (an incomplete check), usually because the
+      tests import packages the chosen interpreter lacks (see `python`). Off by default;
+      the receipt and a warning say so either way.
     default: "false"
 
 outputs:
@@ -44,6 +50,7 @@ runs:
         BASE: ${{ inputs.base }}
         HEAD: ${{ inputs.head }}
         STRICT: ${{ inputs.strict }}
+        SNITCH_PYTHON: ${{ inputs.python }}
       run: |
         if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
           echo "::error::base commit $BASE is not in the checkout; use actions/checkout with fetch-depth: 0"
@@ -56,7 +63,7 @@ runs:
         status=$?
         set -e
         if [ "$status" -eq 3 ]; then
-          note="Incomplete check: a detector could not run (usually the tests import packages that Snitch's own environment lacks), so a deleted or skipped test may have been missed; see the job log."
+          note="Incomplete check: a detector could not run (usually the tests import packages the interpreter lacks; set the python input), so a deleted or skipped test may have been missed; see the job log."
           printf '\n> **%s**\n' "$note" >> snitch-receipt.md
           if [ "$STRICT" = "true" ]; then
             cat snitch-receipt.md >> "$GITHUB_STEP_SUMMARY"

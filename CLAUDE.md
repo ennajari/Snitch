@@ -260,8 +260,12 @@ class SnitchEvent(BaseModel):
 - pytest ignores `tests/fixtures` (norecursedirs); ruff excludes `tests/fixtures` and `*.md`.
 - Fixture tests copy before/ and after/ into tmp_path before running.
 - Event ids are a stable hash of (session_id, pattern, node id) so re-runs dedupe.
-- Known limitation: collection runs the target repo's conftest.py with Snitch's own
-  interpreter; a repo with missing dependencies raises InventoryError.
+- Collection runs the target repo's conftest.py with the repo's interpreter when one is
+  known (`SNITCH_PYTHON`, else `<live repo>/.venv/bin/python`; hooks and `snitch
+  diff/check` only, never `compare` / the bench, whose trees an agent produced), else
+  Snitch's own; the inventory plugin is loaded as a standalone file (stdlib + pytest,
+  3.10+ syntax). An interpreter without pytest falls back to Snitch's own. A repo whose
+  dependencies none of these can import still raises InventoryError (decided 2026-10-25).
 
 ## Stack and commands
 - Python 3.12, managed with **uv** (`uv add`, `uv run`). Never use pip directly.
