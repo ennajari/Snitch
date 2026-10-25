@@ -78,8 +78,8 @@ now; proper packaging decided at publish time.
       not a ledger event yet, and edits made through Bash do not count. (+8 tests)
 - [x] 6. PreToolUse gate — `snitch hook pre-tool` on Edit|Write|MultiEdit|Bash, enforce
       mode only: denies edits to paths matching `frozen = [globs]` in the repo's
-      `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` on
-      pytest-named test files or frozen paths, and `git ... --no-verify`; the deny reason
+      `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` / `perl -i`
+      on test files (the repo's `python_files`) or frozen paths, and `git ... --no-verify`; the deny reason
       points to `escalate`. A malformed `.snitch.toml` is a hook error (exit 1). (20 tests)
 - [x] SessionStart also gives the agent an anti-reward-hacking policy (engine/policy.py,
       adapted from Gomez 2026, arXiv 2608.29460: policy + escalation tool 23.6% -> 5.3%)

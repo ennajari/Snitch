@@ -581,6 +581,8 @@ def test_gate_only_blocks_in_enforce(tmp_path: Path, repo: Path, mode: str) -> N
         "cd tests && sed -i.bak -e 's/1/0/' test_calc.py",
         "sed -Ei 's/1/0/' tests/test_calc.py; pytest",
         "sed --in-place 's/1/0/' tests/calc_test.py",
+        "perl -pi -e 's/1/0/' tests/test_calc.py",
+        "perl -i.bak -pe 's/1/0/' tests/test_calc.py",
         "git commit --no-verify -m wip",
         "git push --no-verify",
     ],
@@ -597,6 +599,9 @@ def test_bash_gate_denies_in_place_test_edits_and_no_verify(
     [
         "sed -i 's/a/b/' calc.py",
         "sed -n '1,5p' tests/test_calc.py",
+        "perl -ne 'print' tests/test_calc.py",
+        "perl -pi -e 's/a/b/' calc.py",
+        "perl -Mstrict -e 'print 1' tests/test_calc.py",
         "echo --no-verify",
         "git commit -m 'explain --no-verify in docs'",
         "uv run pytest -q",

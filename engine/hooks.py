@@ -427,14 +427,19 @@ def _in_place(word: str) -> bool:
     return word.startswith("-") and "i" in word[1:]  # -i, -i.bak, -Ei
 
 
+# perl's -i, alone or in a cluster of argument-less switches (-pi, -i.bak, -pie)
+PERL_IN_PLACE = re.compile(r"-[aclnpsTtuUwW]*i")
+
+
 def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str | None:
-    # shortcut: catches sed -i and git --no-verify only; `cd` inside the line, perl -i,
+    # shortcut: catches sed -i, perl -i and git --no-verify only; `cd` inside the line,
     # redirections and python one-liners still get through to the PostToolUse detectors.
     for words in _segments(command):
         program = Path(words[0]).name
         if program == "git" and "--no-verify" in words:
             return "`--no-verify` skips the repository's git hooks"
-        if program != "sed" or not any(_in_place(w) for w in words[1:]):
+        in_place = _in_place if program == "sed" else PERL_IN_PLACE.match
+        if program not in ("sed", "perl") or not any(in_place(w) for w in words[1:]):
             continue
         for word in words[1:]:
             target = Path(word)
@@ -444,7 +449,7 @@ def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str
             if not word.startswith("-") and (
                 is_test or _is_frozen(_repo_path(root, cwd / target), frozen)
             ):
-                return f"`sed -i` would rewrite {word} in place"
+                return f"`{program} -i` would rewrite {word} in place"
     return None
 
 
