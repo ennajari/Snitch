@@ -175,6 +175,11 @@ Harbor notes: `authors = [{ name = "..." }]` (plain strings make the task silent
 invalid: "Either datasets or tasks must be provided"); Docker Desktop only mounts paths
 under $HOME, so `-o <jobs dir>` must not be under /tmp; the verifier installs Snitch
 from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push first.
+Slow network: grade offline from a copy of bench/tasks with the engine wheel (`uv build
+--wheel` at the grading commit) and its dependency wheels (`pip download` inside a task
+image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFFLINE=1
+--ve UV_FIND_LINKS=/tests/wheels --ve SNITCH_SPEC=/tests/wheels/<engine wheel>`.
+`--ve SNITCH_SPEC=git+https://github.com/ennajari/snitch@<sha>` pins the grader online.
 
 ## CI (Snitch CI, weeks 6–7) — started
 - [x] `--sarif PATH` on diff / check / compare (engine/sarif.py, SARIF 2.1.0; severity
