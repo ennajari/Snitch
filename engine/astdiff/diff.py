@@ -564,17 +564,21 @@ def diff_ast(
         before_path = before_files.get(file)
         if before_path is None or not _is_test_file(after_path, test_files):
             continue
-        # Trees must outlive their nodes.
-        before_tree = PARSER.parse(before_path.read_bytes())
-        after_tree = PARSER.parse(after_path.read_bytes())
-        before_tests = dict(_tests(before_tree.root_node, file))
-        after_tests = dict(_tests(after_tree.root_node, file))
         from_conftest = [
             n
             for folder, nodes in conftest_setup.items()
             if folder == "." or file.startswith(folder + "/")
             for n in nodes
         ]
+        before_bytes, after_bytes = before_path.read_bytes(), after_path.read_bytes()
+        # every pattern compares this file's two versions, plus new conftest setup
+        if before_bytes == after_bytes and not from_conftest:
+            continue
+        # Trees must outlive their nodes.
+        before_tree = PARSER.parse(before_bytes)
+        after_tree = PARSER.parse(after_bytes)
+        before_tests = dict(_tests(before_tree.root_node, file))
+        after_tests = dict(_tests(after_tree.root_node, file))
         old_setup = {_text(n) for n in _outside_tests(before_tree.root_node)}
         new_setup = [
             n for n in _outside_tests(after_tree.root_node) if _text(n) not in old_setup

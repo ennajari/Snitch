@@ -54,7 +54,7 @@ now; proper packaging decided at publish time.
       work tree like the baseline, runs all detectors (engine/detect.py, shared with the CLI),
       records to `<data>/ledger.db`; warn/enforce add `additionalContext` for NEW events only;
       observe records silently. A file-list/size/mtime fingerprint skips unchanged trees
-      (~0.4s) — a run with detectors takes ~1.3s on a tiny repo, ~13s on a
+      (~0.4s) — a run with detectors takes ~1.3s on a tiny repo, ~12s on a
       2,000-file / 5,000-test repo (the baseline's collection is cached per session;
       plain pytest collection of the current tree is ~9.5s of that). Hook errors exit 1.
       Skips silently when cwd's repo is not the session's own repo. (8 tests)
