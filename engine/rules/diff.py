@@ -8,7 +8,14 @@ from typing import Literal
 
 from tree_sitter import Node
 
-from engine.astdiff.diff import PARSER, _is_test_file, _py_files, _text, _walk
+from engine.astdiff.diff import (
+    PARSER,
+    _is_test_file,
+    _py_files,
+    _text,
+    _walk,
+    python_file_patterns,
+)
 from engine.models import SnitchEvent, new_event
 
 # read at any depth (monorepos keep per-package config), outside SKIP_DIRS
@@ -276,6 +283,7 @@ def diff_rules(
 
     before_py = _py_files(before_repo)
     after_py = _py_files(after_repo)
+    test_files = python_file_patterns(before_repo, after_repo)
 
     def unchanged(file: str, path: Path) -> bool:
         # every rule fires only on what is new, so an identical file cannot fire
@@ -367,7 +375,11 @@ def diff_rules(
             emit_lines("evasion", pattern, file, hits)
 
     for file, path in after_py.items():
-        if _is_test_file(path) or path.name == "conftest.py" or unchanged(file, path):
+        if (
+            _is_test_file(path, test_files)
+            or path.name == "conftest.py"
+            or unchanged(file, path)
+        ):
             continue
         old_path = before_py.get(file)
         emit_lines(

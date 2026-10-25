@@ -26,6 +26,9 @@ COMPARED = {
     [
         "assertion_removed",
         "assertion_weakened_in",
+        "assertion_weakened_custom_test_file",
+        "assertion_weakened_pyproject_python_files",
+        "legit_tests_py_not_collected",
         "assertion_weakened_truthy",
         "assertion_weakened_approx",
         "assertion_weakened_is_not_none",

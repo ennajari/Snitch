@@ -1,6 +1,9 @@
+import configparser
 import textwrap
+import tomllib
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Literal
 
@@ -47,10 +50,50 @@ def _walk(node: Node) -> Iterator[Node]:
         yield from _walk(child)
 
 
-def _is_test_file(path: Path) -> bool:
-    # shortcut: pytest's default naming only; read python_files / python_functions
-    # from the repo's config when a project with custom patterns needs it.
-    return path.name.startswith("test_") or path.name.endswith("_test.py")
+DEFAULT_TEST_FILES = ("test_*.py", "*_test.py")
+
+
+def _python_files(repo: Path) -> tuple[str, ...]:
+    """pytest's `python_files` from the repo's root config, found in pytest's order."""
+    # shortcut: root config only and basename patterns; python_functions not read
+    for name, section in (
+        ("pytest.ini", "pytest"),
+        ("pyproject.toml", None),
+        ("tox.ini", "pytest"),
+        ("setup.cfg", "tool:pytest"),
+    ):
+        path = repo / name
+        if not path.is_file():
+            continue
+        try:
+            if section is None:
+                options = tomllib.loads(path.read_text())
+                found = options.get("tool", {}).get("pytest", {}).get("ini_options")
+                if found is None:
+                    continue
+                value = found.get("python_files")
+            else:
+                parser = configparser.ConfigParser(interpolation=None)
+                parser.read_string(path.read_text())
+                if not parser.has_section(section):
+                    continue
+                value = parser.get(section, "python_files", fallback=None)
+        except (tomllib.TOMLDecodeError, configparser.Error, UnicodeDecodeError):
+            continue  # unparseable: pytest would fail too; keep the defaults
+        if value is None:
+            return DEFAULT_TEST_FILES
+        return tuple(value.split() if isinstance(value, str) else value)
+    return DEFAULT_TEST_FILES
+
+
+def python_file_patterns(*repos: Path) -> tuple[str, ...]:
+    """A file is a test file when either side's config says so: a config change
+    cannot hide an edited test from the detectors."""
+    return tuple(dict.fromkeys(p for repo in repos for p in _python_files(repo)))
+
+
+def _is_test_file(path: Path, patterns: tuple[str, ...] = DEFAULT_TEST_FILES) -> bool:
+    return any(fnmatch(path.name, p) for p in patterns)
 
 
 def _py_files(repo: Path) -> dict[str, Path]:
@@ -122,11 +165,13 @@ def enclosing_test(path: Path, line: int) -> str | None:
 def source_changed(before_repo: Path, after_repo: Path) -> bool:
     """Whether any non-test .py file differs between the two repos."""
 
+    patterns = python_file_patterns(before_repo, after_repo)
+
     def sources(repo: Path) -> dict[str, bytes]:
         return {
             f: p.read_bytes()
             for f, p in _py_files(repo).items()
-            if not _is_test_file(p)
+            if not _is_test_file(p, patterns)
         }
 
     # shortcut: repo-wide, any non-test .py counts as "the code under test";
@@ -493,6 +538,7 @@ def diff_ast(
     now = datetime.now(UTC)
 
     changed_source = source_changed(before_repo, after_repo)
+    test_files = python_file_patterns(before_repo, after_repo)
 
     # new injections in conftest.py files reach every test below them
     conftest_trees = []
@@ -516,7 +562,7 @@ def diff_ast(
     events: list[SnitchEvent] = []
     for file, after_path in after_files.items():
         before_path = before_files.get(file)
-        if before_path is None or not _is_test_file(after_path):
+        if before_path is None or not _is_test_file(after_path, test_files):
             continue
         # Trees must outlive their nodes.
         before_tree = PARSER.parse(before_path.read_bytes())

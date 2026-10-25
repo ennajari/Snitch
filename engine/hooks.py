@@ -19,7 +19,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from engine.astdiff.diff import _is_test_file, enclosing_test
+from engine.astdiff.diff import _is_test_file, enclosing_test, python_file_patterns
 from engine.detect import run_detectors
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
@@ -438,7 +438,9 @@ def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str
             continue
         for word in words[1:]:
             target = Path(word)
-            is_test = target.suffix == ".py" and _is_test_file(target)
+            is_test = target.suffix == ".py" and _is_test_file(
+                target, python_file_patterns(root)
+            )
             if not word.startswith("-") and (
                 is_test or _is_frozen(_repo_path(root, cwd / target), frozen)
             ):

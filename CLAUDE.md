@@ -218,7 +218,7 @@ from GitHub (`SNITCH_SPEC` overrides, e.g. a wheel copied into tests/) — push 
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-47 cheat / 30 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot). Runner and coverage config is read at any depth (outside .venv / node_modules). Open items:
+49 cheat / 31 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
 hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
