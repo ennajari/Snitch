@@ -1,7 +1,7 @@
 {
   "name": "snitch",
   "displayName": "Snitch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Catches coding agents that make tests pass by cheating, and gives them an honest way out.",
   "author": {
     "name": "ennajari"

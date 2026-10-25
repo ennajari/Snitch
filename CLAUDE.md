@@ -80,7 +80,9 @@ now; proper packaging decided at publish time.
       mode only: denies edits to paths matching `frozen = [globs]` in the repo's
       `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` / `perl -i`
       on test files (the repo's `python_files`) or frozen paths, and `git ... --no-verify`; the deny reason
-      points to `escalate`. A malformed `.snitch.toml` is a hook error (exit 1). (20 tests)
+      points to `escalate`. A malformed `.snitch.toml` is a hook error (exit 1). Also denies
+      writes (Edit/Write, and shell `>` / tee / rm / mv / cp / sed -i ...) to Snitch's own
+      state: `.snitch.toml`, the plugin data dir, the plugin, Claude Code settings files. (41 tests)
 - [x] SessionStart also gives the agent an anti-reward-hacking policy (engine/policy.py,
       adapted from Gomez 2026, arXiv 2608.29460: policy + escalation tool 23.6% -> 5.3%)
       in warn/enforce, on resume too; observe injects nothing. escalate's description

@@ -146,6 +146,16 @@ frozen = ["tests/**", "pytest.ini", "conftest.py"]
 
 Ask Claude for "the snitch ledger" to see the session's receipt.
 
+What `enforce` can and cannot block. It denies the agent's Edit/Write calls on frozen
+paths, `sed -i` / `perl -i` on test files, `git --no-verify`, and any write to Snitch's
+own state: `.snitch.toml`, the plugin's ledger and baselines, the installed plugin, and
+the Claude Code settings files that could switch hooks off. Shell commands are checked
+for the common write forms (`>`, `>>`, `tee`, `rm`, `mv`, `cp`, `sed -i` ...), not for
+every possible one: a Python one-liner or a `cd` inside the command line gets through.
+The gate is a guard rail inside the agent's own session, not a sandbox. Every change
+still goes through the detectors after the tool call and at the Stop hook, and in CI
+the GitHub Action re-checks the diff from outside the agent's reach.
+
 ### GitHub Action
 
 ```yaml
@@ -164,7 +174,7 @@ jobs:
       - uses: ennajari/snitch@v1
 ```
 
-Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `false`), `comment`, `upload-sarif`, `base`, `head`.
+Inputs: `fail-on-events` (default `true`), `strict` (fail when a detector could not run, default `true`: an incomplete check never passes silently), `comment`, `upload-sarif`, `base`, `head`.
 Output: `events`.
 
 ### pre-commit
@@ -172,7 +182,7 @@ Output: `events`.
 ```yaml
 repos:
   - repo: https://github.com/ennajari/snitch
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: snitch
 ```
@@ -276,7 +286,7 @@ If you use Snitch or TemptationBench in your work, please cite it
   author  = {Ennajari, Abdellah},
   title   = {Snitch: an integrity layer for AI coding agents, and TemptationBench},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   url     = {https://github.com/ennajari/Snitch}
 }
 ```
