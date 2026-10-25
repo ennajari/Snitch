@@ -22,8 +22,11 @@ inputs:
     description: Upload the events to GitHub code scanning (needs security-events write).
     default: "true"
   strict:
-    description: Fail when a detector could not run (an incomplete check) instead of passing.
-    default: "false"
+    description: >-
+      Fail when a detector could not run (an incomplete check) instead of passing.
+      Set to "false" to let an incomplete check pass, e.g. when the tests need
+      packages this job does not install.
+    default: "true"
 
 outputs:
   events:
@@ -54,7 +57,7 @@ runs:
         status=$?
         set -e
         if [ "$status" -eq 3 ]; then
-          echo "::error::Snitch could not run every detector (strict mode); see the log above."
+          echo "::error::Snitch could not run every detector, so this check is incomplete; see the log above. Install what the tests import before this step, or set strict: \"false\"."
           exit 3
         fi
         if [ "$status" -gt 1 ]; then exit "$status"; fi
