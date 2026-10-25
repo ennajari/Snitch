@@ -648,3 +648,72 @@ def test_unknown_mode_falls_back_to_warn_and_says_so(
     monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_MODE", "strict")
     assert hooks._mode() == "warn"
     assert "strict" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "{repo}/.snitch.toml",
+        "{repo}/.claude/settings.json",
+        "{repo}/.claude/settings.local.json",
+        "{home}/.claude/settings.json",
+        "{home}/.claude/plugins/cache/snitch/hooks/hooks.json",
+        "{data}/ledger.db",
+        "{data}/sessions/s1/baseline/tests/test_calc.py",
+    ],
+)
+def test_enforce_guards_snitch_and_hook_settings(
+    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    # without a .snitch.toml: the guard does not depend on the file it protects
+    home, data = tmp_path / "home", tmp_path / "data"
+    monkeypatch.setenv("HOME", str(home))
+    path = target.format(repo=repo, home=home, data=data)
+
+    reason = denied(pre_tool(data, repo, "Write", {"file_path": path}))
+
+    assert reason is not None and "configures or records Snitch" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo 'frozen = []' > .snitch.toml",
+        "printf '' >> .snitch.toml",
+        "rm -f .snitch.toml",
+        "mv .snitch.toml /tmp/off",
+        "cp /dev/null .snitch.toml",
+        "sed -i 's/tests/x/' .snitch.toml",
+        "echo '{}' | tee .claude/settings.json",
+        "rm -rf ~/.claude/plugins/cache/snitch",
+        "cd . && echo 1 >| .claude/settings.local.json",
+    ],
+)
+def test_bash_gate_guards_snitch_and_hook_settings(
+    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    reason = denied(pre_tool(tmp_path / "data", repo, "Bash", {"command": command}))
+    assert reason is not None and "configures or records Snitch" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat .snitch.toml",
+        "cp .snitch.toml /tmp/snitch-copy.toml",
+        "grep frozen .snitch.toml > /tmp/frozen.txt",
+        "rm -rf build",
+    ],
+)
+def test_bash_gate_lets_snitch_config_be_read(
+    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    data = tmp_path / "data"
+    assert denied(pre_tool(data, repo, "Bash", {"command": command})) is None
+
+
+def test_guard_only_blocks_in_enforce(tmp_path: Path, repo: Path) -> None:
+    target = {"file_path": str(repo / ".snitch.toml")}
+    assert denied(pre_tool(tmp_path / "data", repo, "Write", target, "warn")) is None

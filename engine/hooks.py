@@ -16,6 +16,7 @@ import tempfile
 import time
 import tomllib
 from fnmatch import fnmatch
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -404,16 +405,20 @@ def _is_frozen(rel: str | None, frozen: list[str]) -> bool:
     return rel is not None and any(fnmatch(rel, glob) for glob in frozen)
 
 
-def _segments(command: str) -> list[list[str]]:
-    """Words of each simple command in a shell line (split on ; && || | & and parens)."""
+def _tokens(command: str) -> list[str]:
+    """Shell words, with operators (; && | > >> ...) as their own tokens."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     try:
-        tokens = list(lexer)
+        return list(lexer)
     except ValueError:  # unbalanced quotes
-        tokens = command.split()
+        return command.split()
+
+
+def _segments(command: str) -> list[list[str]]:
+    """Words of each simple command in a shell line (split on ; && || | & and parens)."""
     segments: list[list[str]] = [[]]
-    for token in tokens:
+    for token in _tokens(command):
         if token and all(c in "();<>|&" for c in token):
             segments.append([])
         else:
@@ -429,6 +434,58 @@ def _in_place(word: str) -> bool:
 
 # perl's -i, alone or in a cluster of argument-less switches (-pi, -i.bak, -pie)
 PERL_IN_PLACE = re.compile(r"-[aclnpsTtuUwW]*i")
+
+
+def _guard(path: Path, root: Path, data_dir: Path) -> str | None:
+    """Why the agent may not write `path` (Snitch's own config, state or code, or the
+    settings that turn hooks off), or None."""
+    path = path.resolve()
+    claude_home = Path.home() / ".claude"
+    files = [root / ".snitch.toml"] + [
+        base / name
+        for base in (root / ".claude", claude_home)
+        for name in ("settings.json", "settings.local.json")
+    ]
+    dirs = [data_dir, claude_home / "plugins"]
+    if plugin_root := os.environ.get("CLAUDE_PLUGIN_ROOT"):
+        dirs.append(Path(plugin_root))
+    if any(path == f.resolve() for f in files) or any(
+        path.is_relative_to(d.resolve()) for d in dirs
+    ):
+        return f"{path} configures or records Snitch and its hooks"
+    return None
+
+
+# programs that write, delete or replace their path arguments; COPIERS only the last one
+WRITERS = {"rm", "mv", "tee", "truncate", "chmod", "unlink"}
+COPIERS = {"cp", "ln", "install"}
+
+
+def _bash_guard(command: str, cwd: Path, root: Path, data_dir: Path) -> str | None:
+    """A shell line that writes a guarded path: an argument of a writing program or of
+    sed/perl -i, or the target of a > / >> redirection."""
+    for words in _segments(command):
+        program = Path(words[0]).name
+        in_place = _in_place if program == "sed" else PERL_IN_PLACE.match
+        args = [w for w in words[1:] if not w.startswith("-")]
+        if program in COPIERS:
+            targets = args[-1:]
+        elif program in WRITERS or (
+            program in ("sed", "perl") and any(in_place(w) for w in words[1:])
+        ):
+            targets = args
+        else:
+            targets = []
+        for word in targets:
+            if why := _guard(cwd / Path(word).expanduser(), root, data_dir):
+                return why
+    for op, target in pairwise(_tokens(command)):
+        redirect = ">" in op and set(op) <= set("&>|")  # > >> >| &>
+        if redirect and (
+            why := _guard(cwd / Path(target).expanduser(), root, data_dir)
+        ):
+            return why
+    return None
 
 
 def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str | None:
@@ -454,7 +511,9 @@ def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str
 
 
 def pre_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
-    """Enforce mode: deny edits to frozen paths, `sed -i` on tests and `--no-verify`."""
+    """Enforce mode: deny edits to frozen paths, `sed -i` on tests and `--no-verify`,
+    and any write to Snitch's own config, ledger, baselines or code, or to the Claude
+    Code settings that could switch its hooks off."""
     if _mode() != "enforce":
         return None
     cwd = Path(str(payload.get("cwd") or "."))
@@ -464,11 +523,14 @@ def pre_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
         return None
     frozen = _frozen(root)
     if payload.get("tool_name") == "Bash":
-        problem = _bash_problem(str(tool_input.get("command") or ""), cwd, root, frozen)
+        command = str(tool_input.get("command") or "")
+        problem = _bash_guard(command, cwd, root, data_dir) or _bash_problem(
+            command, cwd, root, frozen
+        )
     else:  # Edit, Write, MultiEdit
         file_path = tool_input.get("file_path")
         rel = _repo_path(root, cwd / str(file_path)) if file_path else None
-        problem = (
+        problem = (file_path and _guard(cwd / str(file_path), root, data_dir)) or (
             f"{rel} is frozen in .snitch.toml" if _is_frozen(rel, frozen) else None
         )
     if problem is None:
