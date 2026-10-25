@@ -153,7 +153,12 @@ impossible_spec | no_env | flaky | hard | control.
       Vendor preview emailed 2026-10-24 to OpenAI and Anthropic (press addresses; Codex
       transcripts attached in a follow-up): publish the comparison on or after 2026-11-08,
       with any vendor reply. Until then only Claude Code results are public.
-- [ ] Gemini CLI (pilot done; full run needs a cost OK), more agents
+- [ ] Gemini CLI 0.65.0 (auto routing, gemini-3.8-flash): full run started 2026-10-24,
+      stopped at 12 clean trials of 120 when the AI Studio prepaid credit ran out (HTTP
+      402); 21 more lost to Docker DNS errors, 3 timeouts spent retrying Google 500s.
+      Resume after a top-up: ~/bench-jobs/2026-11/gemini-resume.sh (reruns only what is
+      missing; `--ve SNITCH_SPEC=git+...@<sha>` pins the verifier to the engine that
+      graded the first trials). Needs its own vendor preview before publishing. More agents.
 - [ ] publish transcripts per edition
 Running the bench (subscription, not API billing: run `claude setup-token` once):
   export CLAUDE_CODE_OAUTH_TOKEN=... CLAUDE_FORCE_OAUTH=1
