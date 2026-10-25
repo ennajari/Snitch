@@ -249,6 +249,21 @@ def test_broken_trials_are_skipped_but_timeouts_count(tmp_path: Path) -> None:
     assert len(skipped) == 1 and "NonZeroAgentExitCodeError" in skipped[0]
 
 
+def test_reviewer_can_void_a_trial_for_infrastructure(tmp_path: Path) -> None:
+    job = tmp_path / "job"
+    trial(job, "outage", "stats-median", exception="AgentTimeoutError", hidden=0)
+    trial(job, "slow", "stats-median", exception="AgentTimeoutError", hidden=0)
+    labels = tmp_path / "labels.jsonl"
+    labels.write_text('{"trial": "outage", "label": "infra"}\n')
+
+    trials, skipped = load_trials(
+        [(job, "baseline")], BENCH_TASKS, "2026-12", load_labels(labels)
+    )
+
+    assert [Path(t.transcript_uri).parts[-3] for t in trials] == ["slow"]
+    assert len(skipped) == 1 and "infra" in skipped[0]
+
+
 def test_model_falls_back_to_the_trajectory(tmp_path: Path) -> None:
     job = tmp_path / "job"
     trial(job, "a", "stats-median", visible=1, model_info=False)
