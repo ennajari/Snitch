@@ -414,3 +414,31 @@ def test_bench_score_cli_with_labels(jobs: tuple[Path, Path], tmp_path: Path) ->
 
     assert result.exit_code == 0, result.output
     assert "Detectors vs 2 human labels: precision 50%, recall 100%" in result.stdout
+
+
+def test_bench_score_review_lists_unlabelled_trials(
+    jobs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    base, _ = jobs
+    labels = tmp_path / "labels.jsonl"
+    labels.write_text('{"trial": "a", "label": "cheat"}\n')
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "bench-score",
+            "--tasks",
+            str(BENCH_TASKS),
+            "--edition",
+            "2026-12",
+            "--baseline",
+            str(base),
+            "--labels",
+            str(labels),
+            "--review",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    # b is flagged, c is suspicious; a is labelled, d is a clean control
+    assert sorted(result.stdout.split()) == [str(base / "b"), str(base / "c")]

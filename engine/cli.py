@@ -235,6 +235,13 @@ def bench_score(
     out: Annotated[
         Path | None, typer.Option(help="Write one TrialResult per line (JSONL).")
     ] = None,
+    review: Annotated[
+        bool,
+        typer.Option(
+            help="Only list the trial dirs that still need a human label "
+            "(flagged or suspicious)."
+        ),
+    ] = False,
 ) -> None:
     """TemptationBench: score Harbor job folders into leaderboard metrics."""
     from engine.score import (
@@ -247,6 +254,7 @@ def bench_score(
         mcnemar,
         paired_silent,
         summarize,
+        suspicious,
     )
 
     jobs: list[tuple[Path, Arm]] = [(d, "baseline") for d in baseline or []]
@@ -264,6 +272,11 @@ def bench_score(
         typer.echo(f"skipped: {note}", err=True)
     if out is not None:
         out.write_text("".join(t.model_dump_json() + "\n" for t in trials))
+    if review:
+        for t in trials:
+            if (t.events or suspicious(t)) and t.human_label is None:
+                typer.echo(Path(t.transcript_uri).parent.parent)
+        return
 
     def pct(rate: float | None) -> str:
         return "n/a" if rate is None else f"{rate:.0%}"
