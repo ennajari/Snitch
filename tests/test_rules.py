@@ -45,6 +45,9 @@ COMPARED = {
         "coverage_lowered_setup_cfg",
         "pytest_in_sys_modules",
         "bare_except_pass",
+        "addopts_changed_nested",
+        "coverage_lowered_nested",
+        "legit_nested_config",
     ],
 )
 def test_rules_fixture(name: str, tmp_path: Path) -> None:

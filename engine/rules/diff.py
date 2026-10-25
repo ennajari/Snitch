@@ -11,8 +11,7 @@ from tree_sitter import Node
 from engine.astdiff.diff import PARSER, _is_test_file, _py_files, _text, _walk
 from engine.models import SnitchEvent, new_event
 
-# shortcut: config files are read at the repo root only; walk the tree when a
-# monorepo with per-package pytest/coverage config needs it.
+# read at any depth (monorepos keep per-package config), outside SKIP_DIRS
 CONFIGS = ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", ".coveragerc")
 REPORT_HOOKS = {
     "pytest_runtest_makereport",
@@ -301,10 +300,15 @@ def diff_rules(
                 ", ".join(hooks),
             )
 
-    for name in CONFIGS:
-        path = after_repo / name
-        if not path.is_file():
-            continue
+    configs = sorted(
+        p
+        for p in after_repo.rglob("*")
+        if p.name in CONFIGS
+        and p.is_file()
+        and not SKIP_DIRS & set(p.relative_to(after_repo).parts)
+    )
+    for path in configs:
+        name = path.relative_to(after_repo).as_posix()
         old_opts, old_threshold = _config(before_repo / name)
         opts, threshold = _config(path)
         old_tokens = _tokens(old_opts)
