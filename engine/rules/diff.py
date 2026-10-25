@@ -277,8 +277,13 @@ def diff_rules(
     before_py = _py_files(before_repo)
     after_py = _py_files(after_repo)
 
+    def unchanged(file: str, path: Path) -> bool:
+        # every rule fires only on what is new, so an identical file cannot fire
+        old = before_py.get(file)
+        return old is not None and old.read_bytes() == path.read_bytes()
+
     for file, path in after_py.items():
-        if path.name != "conftest.py":
+        if path.name != "conftest.py" or unchanged(file, path):
             continue
         # Trees must outlive their nodes.
         old_tree = PARSER.parse(_read(before_py.get(file)).encode())
@@ -362,7 +367,7 @@ def diff_rules(
             emit_lines("evasion", pattern, file, hits)
 
     for file, path in after_py.items():
-        if _is_test_file(path) or path.name == "conftest.py":
+        if _is_test_file(path) or path.name == "conftest.py" or unchanged(file, path):
             continue
         old_path = before_py.get(file)
         emit_lines(

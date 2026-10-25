@@ -213,7 +213,13 @@ def _session_events(
             with tempfile.TemporaryDirectory() as tmp:
                 current = Path(tmp) / "current"
                 snapshot(root, current, files)
-                events, warnings = run_detectors(baseline, current, session_id)
+                events, warnings = run_detectors(
+                    baseline,
+                    current,
+                    session_id,
+                    # the baseline never changes within a session: collect it once
+                    before_cache=session / "baseline-inventory.json",
+                )
                 found = {
                     e.id: enclosing_test(current / e.file, e.line_start) for e in events
                 }

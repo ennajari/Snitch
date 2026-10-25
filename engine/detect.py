@@ -8,13 +8,15 @@ from engine.rules import diff_rules
 
 
 def run_detectors(
-    before: Path, after: Path, session_id: str
+    before: Path, after: Path, session_id: str, *, before_cache: Path | None = None
 ) -> tuple[list[SnitchEvent], list[str]]:
     """Events from all three detectors, plus warnings for any detector that was skipped."""
     events: list[SnitchEvent] = []
     warnings = []
     try:
-        events += diff_inventory(before, after, session_id=session_id)
+        events += diff_inventory(
+            before, after, session_id=session_id, before_cache=before_cache
+        )
     except InventoryError as exc:
         warnings.append(f"inventory detector skipped: {str(exc).splitlines()[0]}")
     events += diff_ast(before, after, session_id=session_id)

@@ -34,9 +34,13 @@ def _uncollected_twin(
 
 
 def diff_inventory(
-    before_repo: Path, after_repo: Path, *, session_id: str = "local"
+    before_repo: Path,
+    after_repo: Path,
+    *,
+    session_id: str = "local",
+    before_cache: Path | None = None,
 ) -> list[SnitchEvent]:
-    before = collect(before_repo)
+    before = collect(before_repo, before_cache)
     after = collect(after_repo)
     before_ids = {i.nodeid for i in before}
     after_by_id = {i.nodeid: i for i in after}

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from engine.inventory import diff_inventory
+from engine.inventory.collect import collect
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPARED = {
@@ -48,3 +49,14 @@ def test_inventory_fixture(name: str, tmp_path: Path) -> None:
     events = [e.model_dump(include=COMPARED) for e in diff_inventory(before, after)]
 
     assert events == expected
+
+
+def test_cached_collection_is_reused(tmp_path: Path) -> None:
+    repo = shutil.copytree(FIXTURES / "test_deleted" / "before", tmp_path / "repo")
+    cache = tmp_path / "inventory.json"
+    first = collect(repo, cache)
+    assert first and cache.is_file()
+
+    # a second call must not collect again: the deleted tests are still listed
+    shutil.rmtree(repo)
+    assert collect(repo, cache) == first

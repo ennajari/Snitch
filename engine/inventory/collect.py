@@ -24,8 +24,11 @@ class Item(BaseModel):
     body_hash: str | None
 
 
-def collect(repo: Path) -> list[Item]:
-    """Collect the test inventory of `repo`. Runs the repo's conftest/import-time code."""
+def collect(repo: Path, cache: Path | None = None) -> list[Item]:
+    """Collect the test inventory of `repo`. Runs the repo's conftest/import-time code.
+    With `cache`, a repo that never changes (a session baseline) is collected once."""
+    if cache is not None and cache.is_file():
+        return [Item(**record) for record in json.loads(cache.read_text())]
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "inventory.json"
         # shortcut: collects with Snitch's own interpreter, so the target repo's
@@ -63,4 +66,6 @@ def collect(repo: Path) -> list[Item]:
                 f"pytest collection failed in {repo} (exit {proc.returncode}):\n"
                 f"{proc.stdout}{proc.stderr}"
             )
+        if cache is not None:
+            cache.write_text(out.read_text())
         return [Item(**record) for record in json.loads(out.read_text())]
