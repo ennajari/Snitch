@@ -717,3 +717,25 @@ def test_bash_gate_lets_snitch_config_be_read(
 def test_guard_only_blocks_in_enforce(tmp_path: Path, repo: Path) -> None:
     target = {"file_path": str(repo / ".snitch.toml")}
     assert denied(pre_tool(tmp_path / "data", repo, "Write", target, "warn")) is None
+
+
+def test_stop_tells_the_user_when_a_detector_could_not_run(
+    tmp_path: Path, repo: Path
+) -> None:
+    data = tmp_path / "data"
+    assert session_start(data, repo).exit_code == 0
+    (repo / "conftest.py").write_text("raise ImportError('no module named torch')\n")
+    post_tool(data, repo)
+
+    warned = json.loads(stop(data, repo, SILENT).stdout)
+    enforced = json.loads(stop(data, repo, SILENT, mode="enforce").stdout)
+
+    assert "could not run every detector" in warned["systemMessage"]
+    assert "inventory detector skipped" in warned["systemMessage"]
+    # not the agent's fault: enforce reports it to the user but does not block
+    assert "decision" not in enforced
+    assert "could not run every detector" in enforced["systemMessage"]
+    assert stop(data, repo, SILENT, mode="observe").stdout == ""
+
+    (repo / "conftest.py").unlink()  # the next complete run clears the note
+    assert stop(data, repo, SILENT).stdout == ""

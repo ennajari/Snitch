@@ -226,6 +226,12 @@ def _session_events(
                 }
             for warning in warnings:
                 print(f"snitch: {warning}", file=sys.stderr)
+            # stderr never reaches the user: the Stop hook reports the gap instead
+            incomplete = session / "incomplete"
+            if warnings:
+                incomplete.write_text("\n".join(warnings))
+            else:
+                incomplete.unlink(missing_ok=True)
             ledger.record(events, {k: v for k, v in found.items() if v})
             state.write_text(fingerprint)
         return session_id, ledger.events(session_id), known
@@ -343,12 +349,21 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
             ledger.close()
     hidden = [e for e in unresolved if not flags[e.id]]
     untested = _claims_untested_pass(payload.get("transcript_path"), message)
-    if not (hidden or untested) or _mode() == "observe":
+    marker = session_dir(data_dir, payload.get("session_id")) / "incomplete"
+    # not the agent's doing (e.g. the tests do not import here): tell the user, never block
+    gap = (
+        "Snitch could not run every detector on this session, so a test change may "
+        f"have been missed: {marker.read_text()}"
+        if marker.is_file()
+        else None
+    )
+    if not (hidden or untested or gap) or _mode() == "observe":
         return None
     listing = "\n".join(_listing(hidden))
     # stop_hook_active: Claude is already continuing because of a stop hook, so
     # blocking again could loop forever; fall back to telling the user.
-    if _mode() == "enforce" and not payload.get("stop_hook_active"):
+    blocking = hidden or untested
+    if _mode() == "enforce" and blocking and not payload.get("stop_hook_active"):
         reasons = []
         if hidden:
             reasons.append(
@@ -362,8 +377,9 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
                 "Snitch: your final message says the tests pass, but no test command "
                 "ran after your last edit. Run the tests, or correct your message."
             )
-        return json.dumps({"decision": "block", "reason": "\n\n".join(reasons)})
-    notes = []
+        block = {"decision": "block", "reason": "\n\n".join(reasons)}
+        return json.dumps(block | ({"systemMessage": gap} if gap else {}))
+    notes = [gap] if gap else []
     if hidden:
         notes.append(
             "Snitch: the agent did not disclose these test changes:\n"
