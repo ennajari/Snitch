@@ -349,14 +349,22 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
             ledger.close()
     hidden = [e for e in unresolved if not flags[e.id]]
     untested = _claims_untested_pass(payload.get("transcript_path"), message)
-    marker = session_dir(data_dir, payload.get("session_id")) / "incomplete"
-    # not the agent's doing (e.g. the tests do not import here): tell the user, never block
-    gap = (
-        "Snitch could not run every detector on this session, so a test change may "
-        f"have been missed: {marker.read_text()}"
-        if marker.is_file()
-        else None
-    )
+    # not the agent's doing (e.g. the tests do not import here): tell the user once per
+    # cause, never block
+    session = session_dir(data_dir, payload.get("session_id"))
+    marker, told = session / "incomplete", session / "incomplete-told"
+    cause = marker.read_text() if marker.is_file() else None
+    gap = None
+    if (
+        cause
+        and _mode() != "observe"
+        and not (told.is_file() and told.read_text() == cause)
+    ):
+        gap = (
+            "Snitch could not run every detector on this session, so a test change may "
+            f"have been missed: {cause}"
+        )
+        told.write_text(cause)
     if not (hidden or untested or gap) or _mode() == "observe":
         return None
     listing = "\n".join(_listing(hidden))

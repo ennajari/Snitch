@@ -78,7 +78,7 @@ now; proper packaging decided at publish time.
       not a ledger event yet, and edits made through Bash do not count. (+8 tests)
       A detector that could not run (e.g. the tests do not import) is kept as
       `sessions/<id>/incomplete` and the Stop hook tells the user (never blocks); the
-      next complete run clears it. (+1 test)
+      next complete run clears it; each cause is shown once per session. (+2 tests)
 - [x] 6. PreToolUse gate — `snitch hook pre-tool` on Edit|Write|MultiEdit|Bash, enforce
       mode only: denies edits to paths matching `frozen = [globs]` in the repo's
       `.snitch.toml` (repo-relative, fnmatch; no file = nothing frozen), `sed -i` / `perl -i`
@@ -197,7 +197,9 @@ image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFF
       `actions/checkout` with fetch-depth 0): `snitch diff base head --sarif`, receipt in
       the job summary + one PR comment (updated), SARIF to code scanning, fails on events
       (input `fail-on-events`). Verified on a real draft PR (#1, closed): comment posted,
-      code-scanning alert at the right line.
+      code-scanning alert at the right line. Always runs `--strict`: an incomplete check
+      (tests that import packages Snitch lacks) adds a note to the receipt and a warning;
+      input `strict: "true"` fails the job instead (default false: most repos would fail).
 - [x] `.github/workflows/ci.yml`: tests + ruff + mypy; action self-test (commits a
       weakened assert, expects 1 event); on PRs, Snitch reviews this repo (report only).
       Actions pinned to Node 24 releases (checkout@v7, setup-uv@v10.2.0, upload-sarif@v4).
