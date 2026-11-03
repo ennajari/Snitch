@@ -18,8 +18,27 @@ server = MCPServer(
 )
 
 
+def _codex_data_dir() -> Path | None:
+    """Codex starts a plugin's MCP server in the plugin's install dir with no project
+    or data env: <codex home>/plugins/cache/<marketplace>/<plugin>/<version>, whose data
+    dir is <codex home>/plugins/data/<plugin>-<marketplace>."""
+    here = Path.cwd()
+    if len(here.parents) < 4 or here.parents[2].name != "cache":
+        return None
+    data = here.parents[3] / "data" / f"{here.parent.name}-{here.parents[1].name}"
+    return data if data.is_dir() else None
+
+
 def _project() -> Path:
-    return Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    if project := os.environ.get("CLAUDE_PROJECT_DIR"):
+        return Path(project)
+    data = _codex_data_dir()
+    # shortcut: the newest session's project, as current_session already assumes one
+    # active session per project; pass the project in once Codex gives servers a cwd.
+    marks = sorted(
+        data.glob("sessions/*/project") if data else [], key=lambda p: p.stat().st_mtime
+    )
+    return Path(marks[-1].read_text()) if marks else Path.cwd()
 
 
 def _session() -> tuple[Path, str | None]:

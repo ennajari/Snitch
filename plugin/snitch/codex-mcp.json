@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "snitch": {
+      "type": "stdio",
+      "command": "./bin/snitch",
+      "cwd": "./",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

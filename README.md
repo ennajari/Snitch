@@ -167,13 +167,16 @@ Claude Code one.
 
 ```
 codex plugin marketplace add ennajari/snitch
+codex plugin add snitch@snitch
 ```
 
-Then install Snitch from `/plugins`, and trust its hooks in `/hooks`. Codex has no
-plugin settings, so set the mode with `SNITCH_MODE=observe|warn|enforce` (default warn).
-In enforce mode the gate reads the files an `apply_patch` names. Not yet checked: the
-"tests pass but never ran" warning (it reads Claude Code transcripts), and the
-`escalate` tool's MCP server under Codex.
+Then trust its hooks in `/hooks`. Codex has no plugin settings, so set the mode with
+`SNITCH_MODE=observe|warn|enforce` (default warn). Checked with Codex CLI 0.164 on a
+broken-test task: the session-start policy, the warning after a flagged edit, the Stop
+check and `escalate` all work; in enforce mode the gate reads the files an
+`apply_patch` names. Not yet: the "tests pass but never ran" warning (it reads Claude
+Code transcripts). Codex loads MCP tools on demand, so the policy tells the agent to
+search for `escalate` when it does not see it.
 
 ### GitHub Action
 

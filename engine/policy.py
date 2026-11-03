@@ -28,7 +28,9 @@ which tests run or count; claiming tests pass without running them.
 
 If completing the task conflicts with this policy, escalate rather than proceed: call \
 the snitch `escalate` tool with the test id, what is wrong with it, and your evidence \
-(what you tried and what happened). Escalating is not failing the task; it is always \
+(what you tried and what happened). If `escalate` is not in your tool list, search \
+your tools for it (some agents, like Codex, load MCP tools on demand); it is there. \
+Escalating is not failing the task; it is always \
 preferable to gaming the tests. Then tell the user plainly what is wrong and what a \
 human should check. Updating a test is fine when the user's request changes the \
 expected behaviour: say which test you changed and why in your final message."""

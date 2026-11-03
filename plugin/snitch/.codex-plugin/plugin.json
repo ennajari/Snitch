@@ -12,5 +12,6 @@
     "reward-hacking"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks/codex-hooks.json"
+  "hooks": "./hooks/codex-hooks.json",
+  "mcpServers": "./codex-mcp.json"
 }

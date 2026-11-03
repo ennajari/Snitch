@@ -191,6 +191,31 @@ def test_escalate_accepts_other_path_forms(
     store.close()
 
 
+def test_under_codex_finds_the_project_from_the_plugin_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Codex runs the server in <home>/plugins/cache/<marketplace>/<plugin>/<version>
+    # with neither CLAUDE_PROJECT_DIR nor an expanded CLAUDE_PLUGIN_DATA
+    home = tmp_path / "codex"
+    plugin_dir = home / "plugins" / "cache" / "snitch" / "snitch" / "0.2.0"
+    plugin_dir.mkdir(parents=True)
+    data = home / "plugins" / "data" / "snitch-snitch"
+    start_session(data, git_repo(tmp_path / "old"), "s0")
+    start_session(data, git_repo(tmp_path / "repo"), "s1")
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", "${PLUGIN_DATA}")
+    monkeypatch.chdir(plugin_dir)
+
+    reply = escalate("test_calc.py::test_add", "expects 3, the spec says 2")
+
+    assert reply.startswith("Escalation recorded")
+    store = Ledger(data / "ledger.db")
+    store.record([event("s1", "test_calc.py"), event("s0", "test_calc.py")])
+    assert [e.escalated for e in store.events("s1")] == [True]
+    assert [e.escalated for e in store.events("s0")] == [False]
+    store.close()
+
+
 @pytest.mark.parametrize("value", [None, "${CLAUDE_PLUGIN_DATA}"])
 def test_finds_the_data_dir_when_the_env_var_is_not_expanded(
     session: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, value: str | None
