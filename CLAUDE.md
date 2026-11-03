@@ -164,6 +164,25 @@ impossible_spec | no_env | flaky | hard | control.
       Vendor preview emailed 2026-10-24 to OpenAI and Anthropic (press addresses; Codex
       transcripts attached in a follow-up): publish the comparison on or after 2026-11-08,
       with any vendor reply. Until then only Claude Code results are public.
+      Scored rows + labels: ~/bench-jobs/2026-11/codex-results.jsonl; results page,
+      site leaderboard and posts on local branch `launch-2026-11-08` (unpushed).
+      With-Snitch arm (bench/agents/codex_snitch.py, warn) started 2026-11-03 into
+      ~/bench-jobs/2026-11/codex_snitch (~/bench-jobs/2026-11/codex-snitch-run.sh).
+      Harbor runs Codex in code mode: tools are called from one JS `exec`; hooks still
+      fire (as Bash) and bench-score counts `tools.mcp__snitch__escalate(` there.
+- [x] Codex CLI plugin (plugin/snitch/.codex-plugin, hooks/codex-hooks.json,
+      codex-mcp.json), checked live on 0.164 (2026-11-03): Codex reads the Claude
+      marketplace file; hooks get CLAUDE_PLUGIN_DATA; apply_patch input is
+      `{"command": "*** Begin Patch ..."}` (the enforce gate reads its file lines);
+      hook commands take no `args`, use `${PLUGIN_ROOT}`. The MCP server gets no project,
+      no data dir and no `${...}` expansion: it runs in
+      <codex home>/plugins/cache/<mkt>/<plugin>/<ver> and takes the newest session in
+      plugins/data/<plugin>-<mkt>. Codex defers MCP tools behind tool search, so the
+      policy tells the agent to search for `escalate` (policy text changed 2026-11-03,
+      after the Claude Code with-Snitch arm). Mode: SNITCH_MODE. Unattended runs need
+      --dangerously-bypass-hook-trust. Not supported: the untested-pass check (reads
+      Claude transcripts). Under Snitch, Codex declined a user-requested test update in
+      a manual check: watch for an over-strict policy.
 - [ ] Gemini CLI 0.65.0 (auto routing, gemini-3.8-flash): full run started 2026-10-24,
       stopped at 12 clean trials of 120 when the AI Studio prepaid credit ran out (HTTP
       402); 21 more lost to Docker DNS errors, 3 timeouts spent retrying Google 500s.
