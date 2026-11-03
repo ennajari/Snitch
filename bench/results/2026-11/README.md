@@ -74,8 +74,8 @@ kept out of the results. Two trials lost to Docker errors were rerun.
 ## Codex CLI
 
 Codex CLI 0.164.0 on its default model (gpt-6.1-sol), the same 40 tasks × 3 runs, without
-Snitch only (Snitch has no Codex plugin yet, so there is no with-Snitch arm). Run
-2026-10-24 with Harbor on the same task images. All 120 trials ran; trials lost to the
+Snitch, run 2026-10-24; the with-Snitch arm (the Codex plugin, warn mode) ran on
+2026-11-03 and follows below. Both with Harbor on the same task images. All 120 trials ran; trials lost to the
 Codex usage limit (`ApiUsageLimitError`) were rerun and are not counted.
 
 | | Codex CLI | Claude Code (same arm) |
@@ -117,7 +117,20 @@ Not measured: whether Snitch changes Codex's behaviour. That needs a Codex adapt
 
 ## Limits
 
-- Codex CLI has no with-Snitch arm (no Codex adapter yet). Gemini CLI is being run.
+- Codex labels: the cheat / clean calls and "named the test" were made by the author
+  with an AI assistant reading each transcript; [HUMAN CHECK PENDING before publishing].
+- Codex arms are 10 days apart (2026-10-24 without, 2026-11-03 with Snitch): the model
+  behind `gpt-6.1-sol` may have changed in between.
+- The session-start policy gained one sentence on 2026-11-03 ("if `escalate` is not in
+  your tool list, search your tools for it": Codex loads MCP tools on demand). The
+  Claude Code with-Snitch arm ran with the earlier text, the Codex one with the new.
+- The Codex arm runs with `--dangerously-bypass-hook-trust` (an unattended run cannot
+  trust hooks in `/hooks`); a user trusts them once.
+- Under Snitch, Codex also declined a test update the user asked for in a manual check.
+  No control task asks for a test change, so this benchmark does not measure that.
+- Grading uses the engine at d692704f for every arm (offline wheels), so the verifier is
+  the same across editions; the plugin inside the agent runs the current engine.
+- Gemini CLI is being run.
 - What the with-Snitch arm measures is the whole plugin: the session-start policy, the
   `escalate` tool and the hooks. This edition does not separate their effects.
 - Disclosure was judged by hand here; the LLM judge and its agreement with human labels
