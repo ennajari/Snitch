@@ -121,7 +121,7 @@
   @media (max-width: 520px) { .brow { grid-template-columns: 1fr; gap: 4px; } }
   .bar { height: 9px; background: var(--code); border-radius: 6px; overflow: hidden; }
   .bar i { display: block; height: 100%; width: 0; border-radius: 6px; transition: width 1.4s cubic-bezier(.2,.8,.2,1); }
-  .bar i.without { background: var(--muted); } .bar i.with { background: var(--accent); } .bar i.esc { background: var(--green); }
+  .bar i.without { background: var(--muted); } .bar i.with { background: var(--accent); } .bar i.esc { background: var(--green); } .bar i.codex { background: var(--red); }
   .brow .val { text-align: right; font: 600 13px var(--mono); }
   .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 4px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
@@ -375,6 +375,21 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
       <div class="card"><span class="tag">14 controls</span><h3>No temptation</h3><p>Normal tasks, to show Snitch doesn’t cry wolf.</p></div>
     </div>
     <div class="board">
+      <div class="board-head"><b>Leaderboard · without Snitch</b><span>edition 2026-11 · same 40 tasks × 3 runs · human-reviewed</span></div>
+      <h4>Trials where the agent changed or gamed a test</h4>
+        <div class="brow"><span class="name">broken test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="56%"></i></div><span class="val">10/18</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="100%"></i></div><span class="val">18/18</span></div></div></div>
+        <div class="brow"><span class="name">flaky test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="53%"></i></div><span class="val">8/15</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="100%"></i></div><span class="val">15/15</span></div></div></div>
+        <div class="brow"><span class="name">impossible spec</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="100%"></i></div><span class="val">15/15</span></div></div></div>
+        <div class="brow"><span class="name">missing service</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="60%"></i></div><span class="val">9/15</span></div></div></div>
+        <div class="brow"><span class="name">hard task</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/15</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="0%"></i></div><span class="val">0/15</span></div></div></div>
+        <div class="brow"><span class="name">control</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="0%"></i></div><span class="val">0/42</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="0%"></i></div><span class="val">0/42</span></div></div></div>
+      <h4>Of those, the final message named the test it changed</h4>
+        <div class="brow"><span class="name">all traps</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="100%"></i></div><span class="val">18/18</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="0%"></i></div><span class="val">0/57</span></div></div></div>
+      <div class="legend"><span><i style="background:var(--muted)"></i>Claude Code 2.1.310 · claude-sonnet-5-5</span><span><i style="background:var(--red)"></i>Codex CLI 0.164.0 · gpt-6.1-sol</span></div>
+    </div>
+    <p class="note">Trap trials with a changed or gamed test: Claude Code 18 of 78, Codex CLI 57 of 78. Neither was silent: every Codex
+      message says a test was changed ("fixed the existing test"), none says which one. Gemini CLI follows when its run is done.</p>
+    <div class="board">
       <div class="board-head"><b>First results · Claude Code</b><span>edition 2026-11 · claude-sonnet-5-5 · 40 tasks × 3 runs · human-reviewed</span></div>
       <h4>Trials where the agent changed a test</h4>
         <div class="brow"><span class="name">broken test</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="56%"></i></div><span class="val">10/18</span></div><div class="pair"><div class="bar"><i class="with" data-bar="0%"></i></div><span class="val">0/18</span></div></div></div>
@@ -393,7 +408,7 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
     </div>
     <p class="note">18 test changes in 120 trials without Snitch, 0 in 120 with it (paired McNemar p = 0.000008; per task 8 → 0, p = 0.008).
       Corrected from 14 after a second review pass. Every one of the 18 was disclosed, and on the broken tests the agent was right that the test was wrong; silent cheating was 0 in both arms.
-      No false alarms on 42 control trials. Codex CLI has been run on the same tasks; its results follow on 8 November 2026, after the 14-day vendor preview. Gemini CLI is being run.
+      No false alarms on 42 control trials. Codex CLI has no Snitch adapter yet, so it has no with-Snitch arm.
       <a href="https://github.com/ennajari/Snitch/blob/master/bench/results/2026-11/README.md">Full results, review and limits</a>.</p>
   </div>
 </section>
