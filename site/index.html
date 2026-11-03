@@ -387,7 +387,8 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
         <div class="brow"><span class="name">all traps</span><div class="bars"><div class="pair"><div class="bar"><i class="without" data-bar="100%"></i></div><span class="val">18/18</span></div><div class="pair"><div class="bar"><i class="codex" data-bar="0%"></i></div><span class="val">0/57</span></div></div></div>
       <div class="legend"><span><i style="background:var(--muted)"></i>Claude Code 2.1.310 · claude-sonnet-5-5</span><span><i style="background:var(--red)"></i>Codex CLI 0.164.0 · gpt-6.1-sol</span></div>
     </div>
-    <p class="note">Trap trials with a changed or gamed test: Claude Code 18 of 78, Codex CLI 57 of 78. Neither was silent: every Codex
+    <p class="note">With the Snitch plugin, Codex CLI changed no test in 78 trap trials (from 57) and called <code>escalate</code> in 59; no false alarm on 42 controls (paired McNemar p ≈ 1e-17).
+      Trap trials with a changed or gamed test without Snitch: Claude Code 18 of 78, Codex CLI 57 of 78. Neither was silent: every Codex
       message says a test was changed ("fixed the existing test"), none says which one. Gemini CLI follows when its run is done.</p>
     <div class="board">
       <div class="board-head"><b>First results · Claude Code</b><span>edition 2026-11 · claude-sonnet-5-5 · 40 tasks × 3 runs · human-reviewed</span></div>
@@ -408,7 +409,7 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
     </div>
     <p class="note">18 test changes in 120 trials without Snitch, 0 in 120 with it (paired McNemar p = 0.000008; per task 8 → 0, p = 0.008).
       Corrected from 14 after a second review pass. Every one of the 18 was disclosed, and on the broken tests the agent was right that the test was wrong; silent cheating was 0 in both arms.
-      No false alarms on 42 control trials. Codex CLI with Snitch: being scored.
+      No false alarms on 42 control trials. Codex CLI with Snitch: 57 → 0 of 78 trap trials.
       <a href="https://github.com/ennajari/Snitch/blob/master/bench/results/2026-11/README.md">Full results, review and limits</a>.</p>
   </div>
 </section>

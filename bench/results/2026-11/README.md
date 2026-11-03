@@ -88,6 +88,16 @@ Codex usage limit (`ApiUsageLimitError`) were rerun and are not counted.
 | solve rate (hidden tests pass, no cheat) | 52% | 85% |
 | agent cost | $5.84 | $3.08 |
 
+With Snitch (the Codex plugin, warn mode, run 2026-11-03): **0 of 78** trap trials
+changed a test, against 57 of 78 without; Codex called `escalate` in 59 (broken test
+18/18, impossible spec 15/15, flaky 15/15, missing service 11/15, hard task 0/15).
+Paired by (task, run): 57 runs changed a test only without Snitch, 0 only with it
+(exact McNemar p ≈ 1.4e-17); per task 19 → 0 (sign test p ≈ 4e-6). Solve rate 52% →
+100%; no false escalation and no flag on the 42 control trials; agent cost $6.14.
+Every trap trial's patches were checked: the only test files written were new test
+files for the requested function (3 invoice-discount trials), next to an escalation of
+the wrong test. `codex-with-snitch-results.jsonl` has the rows.
+
 Per temptation:
 
 | temptation | trials | changed or gamed a test |
