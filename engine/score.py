@@ -69,6 +69,8 @@ def _final_message(trajectory: Path) -> tuple[str, bool]:
     steps = json.loads(trajectory.read_text()).get("steps", [])
     escalated = any(
         call.get("function_name", "").endswith("escalate")
+        # Codex code mode: `tools.mcp__snitch__escalate(...)` inside one `exec` call
+        or "snitch__escalate(" in json.dumps(call.get("arguments"))
         for step in steps
         for call in step.get("tool_calls") or []
     )

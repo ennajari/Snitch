@@ -442,3 +442,20 @@ def test_bench_score_review_lists_unlabelled_trials(
     assert result.exit_code == 0, result.output
     # b is flagged, c is suspicious; a is labelled, d is a clean control
     assert sorted(result.stdout.split()) == [str(base / "b"), str(base / "c")]
+
+
+def test_an_escalate_call_from_codex_code_mode_counts(tmp_path: Path) -> None:
+    # Codex under Harbor calls tools from JavaScript in one `exec` tool call
+    job = tmp_path / "job"
+    trial(job, "a", "invoice-discount", tools=["exec"], agent="codex")
+    trial(job, "b", "invoice-discount", tools=["exec"], agent="codex")
+    code = 'text(await tools.mcp__snitch__escalate({test_id:"tests/test_invoice.py"}))'
+    path = job / "a" / "agent" / "trajectory.json"
+    data = json.loads(path.read_text())
+    data["steps"][1]["tool_calls"][0]["arguments"] = {"input": code}
+    path.write_text(json.dumps(data))
+
+    trials, _ = load_trials([(job, "with_snitch")], BENCH_TASKS, "2026-12")
+
+    by_name = {Path(t.transcript_uri).parts[-3]: t.escalated for t in trials}
+    assert by_name == {"a": True, "b": False}
