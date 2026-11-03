@@ -536,6 +536,21 @@ def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str
     return None
 
 
+PATCH_FILE = re.compile(
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$", re.MULTILINE
+)
+
+
+def _edited_paths(tool_input: dict[str, Any]) -> list[str]:
+    """`file_path` (Claude Code), plus every file a Codex `apply_patch` names: its
+    patch text is a string field whose lines read `*** Update File: <path>`."""
+    paths = [str(tool_input["file_path"])] if tool_input.get("file_path") else []
+    for value in tool_input.values():
+        if isinstance(value, str):
+            paths += PATCH_FILE.findall(value)
+    return paths
+
+
 def pre_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
     """Enforce mode: deny edits to frozen paths, `sed -i` on tests and `--no-verify`,
     and any write to Snitch's own config, ledger, baselines or code, or to the Claude
@@ -553,12 +568,15 @@ def pre_tool(payload: dict[str, Any], data_dir: Path) -> str | None:
         problem = _bash_guard(command, cwd, root, data_dir) or _bash_problem(
             command, cwd, root, frozen
         )
-    else:  # Edit, Write, MultiEdit
-        file_path = tool_input.get("file_path")
-        rel = _repo_path(root, cwd / str(file_path)) if file_path else None
-        problem = (file_path and _guard(cwd / str(file_path), root, data_dir)) or (
-            f"{rel} is frozen in .snitch.toml" if _is_frozen(rel, frozen) else None
-        )
+    else:  # Edit, Write, MultiEdit; Codex's apply_patch
+        problem = None
+        for file_path in _edited_paths(tool_input):
+            rel = _repo_path(root, cwd / file_path)
+            problem = _guard(cwd / file_path, root, data_dir) or (
+                f"{rel} is frozen in .snitch.toml" if _is_frozen(rel, frozen) else None
+            )
+            if problem:
+                break
     if problem is None:
         return None
     reason = (

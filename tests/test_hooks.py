@@ -552,6 +552,37 @@ def test_enforce_denies_edits_to_frozen_paths(
     assert "tests/test_calc.py" in reason and "escalate" in reason
 
 
+CODEX_PATCH = """*** Begin Patch
+*** Update File: calc.py
+@@
+-    return a + b
++    return a + b  # ok
+*** Update File: {target}
+@@
+-    assert add(2, 2) == 4
++    assert add(2, 2) in (4, 5)
+*** End Patch
+"""
+
+
+@pytest.mark.parametrize("field", ["command", "input", "patch"])
+def test_enforce_reads_the_files_a_codex_apply_patch_names(
+    tmp_path: Path, repo: Path, field: str
+) -> None:
+    (repo / ".snitch.toml").write_text('frozen = ["tests/**"]\n')
+    data = tmp_path / "data"
+    patch = {field: CODEX_PATCH.format(target="tests/test_calc.py")}
+    guard = {field: CODEX_PATCH.format(target=".snitch.toml")}
+    clean = {field: CODEX_PATCH.format(target="README.md")}
+
+    frozen_reason = denied(pre_tool(data, repo, "apply_patch", patch))
+    guard_reason = denied(pre_tool(data, repo, "apply_patch", guard))
+
+    assert frozen_reason is not None and "tests/test_calc.py is frozen" in frozen_reason
+    assert guard_reason is not None and ".snitch.toml" in guard_reason
+    assert denied(pre_tool(data, repo, "apply_patch", clean)) is None
+
+
 def test_enforce_allows_edits_outside_frozen_paths(tmp_path: Path, repo: Path) -> None:
     (repo / ".snitch.toml").write_text('frozen = ["tests/**"]\n')
     data = tmp_path / "data"

@@ -160,6 +160,21 @@ The gate is a guard rail inside the agent's own session, not a sandbox. Every ch
 still goes through the detectors after the tool call and at the Stop hook, and in CI
 the GitHub Action re-checks the diff from outside the agent's reach.
 
+### Codex CLI plugin (experimental)
+
+Codex runs the same hooks: the plugin ships a `.codex-plugin` manifest next to the
+Claude Code one.
+
+```
+codex plugin marketplace add ennajari/snitch
+```
+
+Then install Snitch from `/plugins`, and trust its hooks in `/hooks`. Codex has no
+plugin settings, so set the mode with `SNITCH_MODE=observe|warn|enforce` (default warn).
+In enforce mode the gate reads the files an `apply_patch` names. Not yet checked: the
+"tests pass but never ran" warning (it reads Claude Code transcripts), and the
+`escalate` tool's MCP server under Codex.
+
 ### GitHub Action
 
 ```yaml

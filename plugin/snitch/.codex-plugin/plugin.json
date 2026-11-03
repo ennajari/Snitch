@@ -1,0 +1,16 @@
+{
+  "name": "snitch",
+  "version": "0.2.0",
+  "description": "Catches coding agents that make tests pass by cheating, and gives them an honest way out.",
+  "author": {
+    "name": "ennajari"
+  },
+  "repository": "https://github.com/ennajari/snitch",
+  "keywords": [
+    "testing",
+    "integrity",
+    "reward-hacking"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json"
+}
