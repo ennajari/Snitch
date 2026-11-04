@@ -251,7 +251,7 @@ image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFF
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-49 cheat / 31 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
+50 cheat / 32 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot; seed_pinned: found in the Gemini run, medium since a pinned seed can be an honest fix). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
 hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).

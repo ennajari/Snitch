@@ -38,6 +38,8 @@ COMPARED = {
         "legit_inequality_tightened",
         "expected_value_changed",
         "skip_in_body",
+        "seed_pinned",
+        "legit_seed_new_test",
         "assertion_guarded",
         "legit_assert_added",
         "legit_expected_updated",

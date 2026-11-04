@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "seed_pinned",
+    "severity": "medium",
+    "file": "test_sampling.py",
+    "line_start": 7,
+    "line_end": 7,
+    "before": null,
+    "after": "random.seed(93)",
+    "detector": "ast"
+  }
+]
