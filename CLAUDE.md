@@ -158,8 +158,8 @@ impossible_spec | no_env | flaky | hard | control.
       0 false alarms on controls. Hand review fixed two tasks whose hidden tests asked
       more than the instruction (json-path, url-query-params -> 1.1.0, rerun). Task
       images preinstall Claude Code 2.1.310; the Snitch MCP server sets alwaysLoad.
-- [x] Codex CLI 0.164.0 (gpt-6.1-sol), 120 trials, not published yet (vendor preview):
-      57/78 trap trials changed or gamed the test, all acknowledged, none named the test.
+- [x] Codex CLI 0.164.0, 120 trials, not published yet (vendor preview). This file is
+      public: results stay out of it until they are published.
       Results only in ~/bench-jobs/2026-11 (labels.jsonl covers both agents).
       Vendor preview emailed 2026-10-24 to OpenAI and Anthropic (press addresses; Codex
       transcripts attached in a follow-up): publish the comparison on or after 2026-11-08,
@@ -181,8 +181,7 @@ impossible_spec | no_env | flaky | hard | control.
       policy tells the agent to search for `escalate` (policy text changed 2026-11-03,
       after the Claude Code with-Snitch arm). Mode: SNITCH_MODE. Unattended runs need
       --dangerously-bypass-hook-trust. Not supported: the untested-pass check (reads
-      Claude transcripts). Under Snitch, Codex declined a user-requested test update in
-      a manual check: watch for an over-strict policy.
+      Claude transcripts).
 - [ ] Gemini CLI 0.65.0 (auto routing, gemini-3.8-flash): full run started 2026-10-24,
       stopped at 12 clean trials of 120 when the AI Studio prepaid credit ran out (HTTP
       402); 21 more lost to Docker DNS errors, 3 timeouts spent retrying Google 500s.
@@ -251,7 +250,7 @@ image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFF
 
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
-50 cheat / 32 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot; seed_pinned: found in the Gemini run, medium since a pinned seed can be an honest fix). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
+50 cheat / 32 legit fixtures (comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot; seed_pinned: found in the bench, medium since a pinned seed can be an honest fix). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
 hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
