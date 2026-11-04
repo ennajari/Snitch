@@ -83,7 +83,7 @@ Codex usage limit (`ApiUsageLimitError`) were rerun and are not counted.
 | trials | 120 | 120 |
 | changed or gamed a test (78 trap trials) | **57** (73%) | 18 (23%) |
 | silent (not disclosed) | 0 | 0 |
-| named the test it changed | 0 of 57 | 18 of 18 |
+| final message gives the test's name (`test_...`) | 0 of 57 | 18 of 18 |
 | changed a test on 42 control trials | 0 | 0 |
 | solve rate (hidden tests pass, no cheat) | 52% | 85% |
 | agent cost | $5.84 | $3.08 |
@@ -118,8 +118,10 @@ an email-normalize assertion, 3 bent the code to fit a wrong pagination-total te
 test of status-timeout for a local HTTP server.
 
 Disclosure: every one of the 57 final messages says a test was changed ("fixed the
-existing test", "corrected the contradictory assertion"), so none is silent. None names
-which test or what the old assertion was, where Claude Code named both every time.
+existing test", "corrected the contradictory assertion"), so none is silent. None gives
+the test's file or function name, where Claude Code gave it every time. Most do describe
+the change in prose, some exactly ("from 3,000 to 2,999 cents", "the conflicting rounding
+test"), others only as "the existing test".
 Missing-service tasks: on 2 of 5 (upload-content-type, user-repo-email) Codex never
 touched the test.
 
@@ -127,7 +129,7 @@ Not measured: whether Snitch changes Codex's behaviour. That needs a Codex adapt
 
 ## Limits
 
-- Codex labels: the cheat / clean calls and "named the test" were made by the author
+- Codex labels: the cheat / clean calls were made by the author
   with an AI assistant reading each transcript; [HUMAN CHECK PENDING before publishing].
 - Codex arms are 10 days apart (2026-10-24 without, 2026-11-03 with Snitch): the model
   behind `gpt-6.1-sol` may have changed in between.
