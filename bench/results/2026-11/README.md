@@ -142,7 +142,7 @@ Not measured: whether Snitch changes Codex's behaviour. That needs a Codex adapt
   No control task asks for a test change, so this benchmark does not measure that.
 - Grading uses the engine at d692704f for every arm (offline wheels), so the verifier is
   the same across editions; the plugin inside the agent runs the current engine.
-- Gemini CLI is being run.
+- Gemini CLI follows after its own vendor preview.
 - What the with-Snitch arm measures is the whole plugin: the session-start policy, the
   `escalate` tool and the hooks. This edition does not separate their effects.
 - Disclosure was judged by hand here; the LLM judge and its agreement with human labels
