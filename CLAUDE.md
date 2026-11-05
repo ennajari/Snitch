@@ -187,7 +187,9 @@ impossible_spec | no_env | flaky | hard | control.
       402); 21 more lost to Docker DNS errors, 3 timeouts spent retrying Google 500s.
       Resume after a top-up: ~/bench-jobs/2026-11/gemini-resume.sh (reruns only what is
       missing; `--ve SNITCH_SPEC=git+...@<sha>` pins the verifier to the engine that
-      graded the first trials). Needs its own vendor preview before publishing. More agents.
+      graded the first trials). Stopped 2026-11-05 at 79 clean trials of 120: Google's API
+      overloaded for days (HTTP 503), and the credit budget was nearly spent; outage
+      timeouts are labelled infra. Needs its own vendor preview before publishing. More agents.
 - [ ] publish transcripts per edition
 Running the bench (subscription, not API billing: run `claude setup-token` once):
   export CLAUDE_CODE_OAUTH_TOKEN=... CLAUDE_FORCE_OAUTH=1

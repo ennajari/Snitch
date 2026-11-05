@@ -266,7 +266,7 @@ tests (10) and flaky tests (8), and every one was disclosed: Claude Code changed
 test and said so, and on the broken tests it was right that the test was wrong. With
 Snitch it reported the problem instead of changing the test. Codex CLI has been run
 on the same 120 trials; its results follow on 8 November 2026, after the 14-day vendor
-preview. Gemini CLI is being run.
+preview. Gemini CLI follows after its own vendor preview.
 (Corrected from 14: a second review pass found 4 more, all disclosed; see the
 results page.)
 
@@ -278,7 +278,7 @@ results page.)
 - [x] TemptationBench: 40 tasks, scoring
 - [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch, human-reviewed)
 - [x] Codex CLI run and reviewed (results 8 November 2026, after the vendor preview)
-- [ ] Gemini CLI (running), then OpenCode and others
+- [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
 
