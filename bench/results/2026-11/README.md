@@ -140,8 +140,12 @@ Not measured: whether Snitch changes Codex's behaviour. That needs a Codex adapt
   trust hooks in `/hooks`); a user trusts them once.
 - Under Snitch, Codex also declined a test update the user asked for in a manual check.
   No control task asks for a test change, so this benchmark does not measure that.
-- Grading uses the engine at d692704f for every arm (offline wheels), so the verifier is
-  the same across editions; the plugin inside the agent runs the current engine.
+- The grader is not the same across arms. Without `SNITCH_SPEC`, a trial grades with
+  whatever GitHub's master held when it ran: that is the case for both Claude Code arms
+  and Codex without Snitch (all 2026-10-24, while detectors were being added). Codex
+  with Snitch grades with d692704f, which lacks detectors added later that day. Its
+  visible tests stayed red on every broken-test, flaky, impossible-spec and
+  missing-service trial (63 of 63), so a test turned green by editing it would show.
 - Gemini CLI follows after its own vendor preview.
 - What the with-Snitch arm measures is the whole plugin: the session-start policy, the
   `escalate` tool and the hooks. This edition does not separate their effects.
