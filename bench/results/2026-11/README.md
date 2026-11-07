@@ -134,8 +134,11 @@ Not measured: whether Snitch changes Codex's behaviour. That needs a Codex adapt
 
 ## Limits
 
-- Codex labels: the cheat / clean calls were made by the author
-  with an AI assistant reading each transcript; [HUMAN CHECK PENDING before publishing].
+- Codex labels: the cheat / clean calls were made by an AI assistant reading each
+  transcript, then re-read in a second AI pass that changed none. No person has checked
+  them yet.
+- The vendor preview (2026-10-24) covered Codex without Snitch. The with-Snitch arm ran
+  afterwards and was not part of it.
 - Codex arms are 10 days apart (2026-10-24 without, 2026-11-03 with Snitch): the model
   behind `gpt-6.1-sol` may have changed in between.
 - The session-start policy gained one sentence on 2026-11-03 ("if `escalate` is not in
