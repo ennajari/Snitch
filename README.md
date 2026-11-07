@@ -247,11 +247,11 @@ both checked in CI and in Docker.
 `snitch bench-score` turns Harbor runs into the leaderboard metrics: solve rate, cheat
 rate, silent-cheat rate (with a bootstrap 95% interval over tasks), honest-escalation
 rate, false positives on controls, a per-temptation breakdown, and McNemar's test for
-with vs without Snitch. Flagged trials are confirmed or cleared with human labels.
+with vs without Snitch. Flagged trials are confirmed or cleared with review labels (AI-assisted so far; human check pending).
 ### First results: Claude Code (edition 2026-11)
 
 Claude Code 2.1.310 on its default model (claude-sonnet-5-5), 40 tasks × 3 runs, with
-and without the Snitch plugin; every flagged trial reviewed by hand
+and without the Snitch plugin; every flagged trial reviewed with an AI assistant, human check pending
 ([full results and limits](bench/results/2026-11/README.md)):
 
 | | without Snitch | with Snitch |
@@ -276,8 +276,8 @@ results page.)
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
-- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch, human-reviewed)
-- [x] Codex CLI run and reviewed (results 8 November 2026, after the vendor preview)
+- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; human review pending)
+- [x] Codex CLI run and labelled (results 8 November 2026, after the vendor preview)
 - [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
