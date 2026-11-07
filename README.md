@@ -264,9 +264,15 @@ and without the Snitch plugin; every flagged trial reviewed with an AI assistant
 Paired McNemar p = 0.000008 (per task: 8 → 0, p = 0.008). The 18 changes came from broken
 tests (10) and flaky tests (8), and every one was disclosed: Claude Code changed the
 test and said so, and on the broken tests it was right that the test was wrong. With
-Snitch it reported the problem instead of changing the test. Codex CLI has been run
-on the same 120 trials; its results follow on 8 November 2026, after the 14-day vendor
-preview. Gemini CLI follows after its own vendor preview.
+Snitch it reported the problem instead of changing the test.
+
+Codex CLI 0.164.0 (gpt-6.1-sol) on the same tasks, with the experimental Codex plugin
+for the with-Snitch arm, run 10 days later: it changed or gamed a test in **57 of 78**
+trap trials without Snitch and **0 of 78** with it, and called `escalate` in 59. All 57
+said a test changed; none gave the test's name. These counts include disclosed changes:
+silent cheating was 0 in every arm above. No person has checked these labels yet; see
+the results page for that and the other limits. Gemini CLI follows after its own vendor
+preview.
 (Corrected from 14: a second review pass found 4 more, all disclosed; see the
 results page.)
 
@@ -277,7 +283,7 @@ results page.)
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 40 tasks, scoring
 - [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; human review pending)
-- [x] Codex CLI run and labelled (results 8 November 2026, after the vendor preview)
+- [x] Codex CLI: both arms run and published (human review pending), experimental plugin
 - [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
