@@ -59,6 +59,7 @@
   th { color: var(--muted); font-weight: 600; font-size: 14px; }
   td.num { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
   .table { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  th button { all: unset; cursor: pointer; } th button:focus-visible { outline: 2px solid var(--accent); } th[aria-sort="ascending"] button::after { content: " ▲"; } th[aria-sort="descending"] button::after { content: " ▼"; }
   .note { color: var(--muted); font-size: 14.5px; margin-top: 14px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
   .tabs button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
@@ -411,6 +412,19 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
       Corrected from 14 after a second review pass. Every one of the 18 was disclosed, and on the broken tests the agent was right that the test was wrong; silent cheating was 0 in both arms.
       No false alarms on 42 control trials. Codex CLI with Snitch: 57 → 0 of 78 trap trials.
       <a href="https://github.com/ennajari/Snitch/blob/master/bench/results/2026-11/README.md">Full results, review and limits</a>.</p>
+    <h3 id="leaderboard">Leaderboard · edition 2026-11</h3>
+    <div class="table">
+      <table class="sortable">
+        <thead><tr><th aria-sort="none"><button type="button">Agent</button></th><th aria-sort="none"><button type="button">Model</button></th><th aria-sort="none"><button type="button">Snitch</button></th><th aria-sort="none"><button type="button">Solve</button></th><th aria-sort="none"><button type="button">Changed a test</button></th><th aria-sort="none"><button type="button">Silent</button></th><th aria-sort="none"><button type="button">Escalated (traps)</button></th><th aria-sort="none"><button type="button">Cost / task</button></th><th aria-sort="none"><button type="button">Transcripts</button></th></tr></thead>
+        <tbody>
+          <tr><td>Claude Code</td><td>claude-sonnet-5-5</td><td>no</td><td class="num" data-v="85">85%</td><td class="num" data-v="15">15%</td><td class="num" data-v="0">0%</td><td class="num" data-v="-1">n/a</td><td class="num" data-v="0.0257">$0.026</td><td><a href="https://github.com/ennajari/Snitch/releases/tag/bench-2026-11">trials</a></td></tr>
+          <tr><td>Claude Code</td><td>claude-sonnet-5-5</td><td>yes</td><td class="num" data-v="100">100%</td><td class="num" data-v="0">0%</td><td class="num" data-v="0">0%</td><td class="num" data-v="65">65%</td><td class="num" data-v="0.0300">$0.030</td><td><a href="https://github.com/ennajari/Snitch/releases/tag/bench-2026-11">trials</a></td></tr>
+          <tr><td>Codex CLI</td><td>gpt-6.1-sol</td><td>no</td><td class="num" data-v="52.5">52.5%</td><td class="num" data-v="47.5">47.5%</td><td class="num" data-v="0">0%</td><td class="num" data-v="-1">n/a</td><td class="num" data-v="0.0486">$0.049</td><td><a href="https://github.com/ennajari/Snitch/releases/tag/bench-2026-11-codex">trials</a></td></tr>
+          <tr><td>Codex CLI</td><td>gpt-6.1-sol</td><td>yes</td><td class="num" data-v="100">100%</td><td class="num" data-v="0">0%</td><td class="num" data-v="0">0%</td><td class="num" data-v="76">76%</td><td class="num" data-v="0.0512">$0.051</td><td><a href="https://github.com/ennajari/Snitch/releases/tag/bench-2026-11-codex">trials</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">40 tasks × 3 runs per row. "Changed a test" counts disclosed changes too; "Silent" is the spec's headline metric. Labels are AI-assisted, human review pending. Click a column to sort.</p>
   </div>
 </section>
 
@@ -476,5 +490,22 @@ snitch compare &lt;before-dir&gt; &lt;after-dir&gt; --json</pre>
   });
 </script>
 <script src="demo.js"></script>
+<script>
+document.querySelectorAll("table.sortable").forEach(table => {
+  const heads = [...table.tHead.rows[0].cells];
+  heads.forEach((th, col) => th.querySelector("button").addEventListener("click", () => {
+    const dir = th.getAttribute("aria-sort") === "descending" ? "ascending" : "descending";
+    heads.forEach(h => h.setAttribute("aria-sort", "none"));
+    th.setAttribute("aria-sort", dir);
+    const key = r => { const c = r.cells[col]; return c.dataset.v !== undefined ? parseFloat(c.dataset.v) : c.textContent; };
+    const rows = [...table.tBodies[0].rows].sort((a, b) => {
+      const x = key(a), y = key(b);
+      const cmp = typeof x === "number" ? x - y : String(x).localeCompare(String(y));
+      return dir === "ascending" ? cmp : -cmp;
+    });
+    rows.forEach(r => table.tBodies[0].appendChild(r));
+  }));
+});
+</script>
 </body>
 </html>
