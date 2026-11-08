@@ -1,0 +1,24 @@
+[
+  {
+    "family": "faking",
+    "pattern": "assertion_self_fulfilled",
+    "severity": "high",
+    "file": "test_status.py",
+    "line_start": 5,
+    "line_end": 5,
+    "before": "assert status.fetch_status() == \"ok\"",
+    "after": "monkeypatch.setattr(\"status.fetch_status\", lambda *a, **k: \"ok\")",
+    "detector": "ast"
+  },
+  {
+    "family": "faking",
+    "pattern": "mock_code_under_test",
+    "severity": "high",
+    "file": "test_status.py",
+    "line_start": 5,
+    "line_end": 5,
+    "before": null,
+    "after": "monkeypatch.setattr(\"status.fetch_status\", lambda *a, **k: \"ok\")",
+    "detector": "ast"
+  }
+]

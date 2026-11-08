@@ -40,6 +40,8 @@ COMPARED = {
         "skip_in_body",
         "seed_pinned",
         "legit_seed_new_test",
+        "mock_code_under_test",
+        "legit_mock_dependency",
         "assertion_guarded",
         "legit_assert_added",
         "legit_expected_updated",

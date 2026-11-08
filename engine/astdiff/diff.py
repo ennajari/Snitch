@@ -1,3 +1,4 @@
+import ast
 import configparser
 import textwrap
 import tomllib
@@ -283,6 +284,87 @@ def _seed_calls(fn: Node) -> list[Node]:
     ]
 
 
+MOCK_CALLS = {"patch", "mock.patch", "unittest.mock.patch", "mocker.patch"}
+MOCK_OBJECT_CALLS = {
+    "patch.object",
+    "mock.patch.object",
+    "unittest.mock.patch.object",
+    "mocker.patch.object",
+    "monkeypatch.setattr",
+}
+
+
+def _string(node: Node) -> str | None:
+    try:
+        value = ast.literal_eval(_text(node))
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _mocks(fn: Node) -> list[tuple[Node, str]]:
+    """(call, dotted target) for each patch / monkeypatch.setattr in a test,
+    decorators included: `patch("mod.f")`, `patch.object(mod, "f")`,
+    `monkeypatch.setattr("mod.f", ...)` and `monkeypatch.setattr(mod, "f", ...)`."""
+    found = []
+    for call in (n for n in _walk(fn) if n.type == "call"):
+        callee, args = _callee(call), _positional(call)
+        target = None
+        if (
+            callee in MOCK_OBJECT_CALLS
+            and len(args) >= 2
+            and args[0].type == "identifier"
+        ):
+            name = _string(args[1])
+            target = f"{_text(args[0])}.{name}" if name else None
+        if target is None and callee in MOCK_CALLS | {"monkeypatch.setattr"} and args:
+            target = _string(args[0])
+        if target and "." in target:
+            found.append((call, target))
+    return found
+
+
+def _definitions(
+    files: dict[str, Path], test_files: tuple[str, ...]
+) -> dict[str, set[str]]:
+    """Top-level functions and classes of the repo's own non-test modules, by
+    dotted module name (`pkg/mod.py` -> `pkg.mod`, `pkg/__init__.py` -> `pkg`)."""
+    defs: dict[str, set[str]] = {}
+    for rel, path in files.items():
+        if _is_test_file(path, test_files) or path.name == "conftest.py":
+            continue
+        module = rel.removesuffix(".py").removesuffix("/__init__").replace("/", ".")
+        tree = PARSER.parse(path.read_bytes())
+        names = set()
+        for child in tree.root_node.named_children:
+            node = child.child_by_field_name("definition") or child
+            name = node.child_by_field_name("name")
+            if node.type in ("function_definition", "class_definition") and name:
+                names.add(_text(name))
+        defs[module] = names
+    return defs
+
+
+def _self_mocks(old_fn: Node, fn: Node, defs: dict[str, set[str]]) -> list[Node]:
+    """New mocks of the repo's own function or class that the same test then
+    calls: the test checks its stand-in, not the code it is about. Mocking a
+    dependency (`mod.random.random`, `mod.smtplib.SMTP`) or another repo function
+    to isolate the one under test is fine."""
+    old = {_text(c) for c, _ in _mocks(old_fn)}
+    calls = [n for n in _walk(fn) if n.type == "call"]
+    hits = []
+    for call, target in _mocks(fn):
+        module, _, name = target.rpartition(".")
+        if _text(call) in old or name not in defs.get(module, set()):
+            continue
+        if any(
+            c is not call and (_callee(c) == name or _callee(c).endswith("." + name))
+            for c in calls
+        ):
+            hits.append(call)
+    return hits
+
+
 EMPTY_ITERABLES = {"[]", "()", "{}", '""', "''", "range(0)", "set()"}
 
 
@@ -549,6 +631,7 @@ def diff_ast(
 
     changed_source = source_changed(before_repo, after_repo)
     test_files = python_file_patterns(before_repo, after_repo)
+    repo_defs = _definitions(after_files, test_files)
 
     # new injections in conftest.py files reach every test below them
     conftest_trees = []
@@ -719,6 +802,15 @@ def diff_ast(
             seeds = [n for n in _seed_calls(fn) if _text(n) not in old_seeds]
             if seeds:
                 emit("seed_pinned", [], seeds, family="evasion", severity="medium")
+
+            # spec: "mocking out the very code under test"
+            # shortcut: tests that existed before only; a new test that mocks what it
+            # calls is left to review
+            faked = _self_mocks(old_fn, fn, repo_defs)
+            if faked:
+                emit(
+                    "mock_code_under_test", [], faked, family="faking", severity="high"
+                )
 
             guarded = [
                 (b, guard)
