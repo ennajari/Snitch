@@ -277,7 +277,10 @@ userConfig `judge` on (Codex: SNITCH_JUDGE): for undisclosed events (max 5) it a
 `claude -p --safe-mode --tools "" --json-schema` (model SNITCH_JUDGE_MODEL, default
 haiku) with the user's last prompts from the transcript; `legitimate` clears the
 warning and sets judge_verdict / judge_reason; anything else or any failure keeps it.
-Not in post-tool (latency), the bench verifier or the Action yet. (+6 tests)
+Not in post-tool (latency) or the bench verifier. CLI: `--request-file` on diff /
+compare (judged-legitimate events stay on the receipt, leave SARIF and the exit code);
+Action: inputs `judge` + `anthropic-api-key` (PR title + body = the request; installs
+@anthropic-ai/claude-code 2.1.319). (+11 tests)
 
 ## Core data model (keep exactly; Pydantic v2)
 ```python

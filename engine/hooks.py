@@ -342,23 +342,19 @@ def _judged(
     request = judge.user_requests(transcript)
     if not request:
         return hidden
-    verdicts: dict[str, tuple[str, str]] = {}
-    for event in hidden[: judge.MAX_EVENTS]:
-        try:
-            verdicts[event.id] = judge.judge(request, event)
-        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
-            print(
-                f"snitch: judge unavailable ({exc}); keeping the warning",
-                file=sys.stderr,
-            )
-            break
+    judged = judge.apply(request, hidden)
+    verdicts = {
+        e.id: (str(e.judge_verdict), e.judge_reason or "")
+        for e in judged
+        if e.judge_verdict
+    }
     if verdicts:
         ledger = Ledger(data_dir / "ledger.db")
         try:
             ledger.set_judged(verdicts)
         finally:
             ledger.close()
-    return [e for e in hidden if verdicts.get(e.id, ("",))[0] != "legitimate"]
+    return [e for e in judged if not judge.cleared(e)]
 
 
 def stop(payload: dict[str, Any], data_dir: Path) -> str | None:

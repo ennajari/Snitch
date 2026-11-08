@@ -207,7 +207,7 @@ jobs:
       - uses: ennajari/snitch@v1
 ```
 
-Inputs: `fail-on-events` (default `true`), `python` (an interpreter that can import your tests; default: the repo's `.venv`, else Snitch's own), `strict` (fail when a detector could not run, default `false`: an incomplete check passes with a warning and a note in the receipt), `comment`, `upload-sarif`, `base`, `head`.
+Inputs: `fail-on-events` (default `true`), `judge` (default `false`; with `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}`, an LLM judge reads the PR title and body and stops counting the test changes they asked for; they stay on the receipt as "judged legitimate"), `python` (an interpreter that can import your tests; default: the repo's `.venv`, else Snitch's own), `strict` (fail when a detector could not run, default `false`: an incomplete check passes with a warning and a note in the receipt), `comment`, `upload-sarif`, `base`, `head`.
 Output: `events`.
 
 ### pre-commit

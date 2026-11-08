@@ -6,6 +6,7 @@ Claude Code login or ANTHROPIC_API_KEY), with no tools and no customizations."""
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -105,3 +106,28 @@ def judge(
     if answer.get("verdict") not in VERDICTS:
         raise ValueError("no verdict")
     return str(answer["verdict"]), str(answer.get("reason", ""))
+
+
+def apply(
+    request: str, events: list[SnitchEvent], run: Callable[[str], str] | None = None
+) -> list[SnitchEvent]:
+    """`events` with judge_verdict / judge_reason set on those judged (the first
+    MAX_EVENTS). The first failure stops judging; unjudged events keep no verdict."""
+    out = list(events)
+    for i, event in enumerate(events[:MAX_EVENTS]):
+        try:
+            verdict, reason = judge(request, event, run)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+            print(
+                f"snitch: judge unavailable ({exc}); keeping the warning",
+                file=sys.stderr,
+            )
+            break
+        out[i] = event.model_copy(
+            update={"judge_verdict": verdict, "judge_reason": reason}
+        )
+    return out
+
+
+def cleared(event: SnitchEvent) -> bool:
+    return event.judge_verdict == "legitimate"

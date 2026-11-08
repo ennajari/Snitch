@@ -34,6 +34,16 @@ inputs:
       the receipt and a warning say so either way.
     default: "false"
 
+  judge:
+    description: >-
+      Ask an LLM judge (claude -p) whether the pull request's title and body asked for
+      each flagged test change; changes judged legitimate stay on the receipt but do
+      not count as events. Needs anthropic-api-key. Off by default.
+    default: "false"
+  anthropic-api-key:
+    description: Anthropic API key for the judge (pass a secret). Unused when judge is off.
+    default: ""
+
 outputs:
   events:
     description: Number of events Snitch flagged.
@@ -44,6 +54,15 @@ runs:
   steps:
     - uses: astral-sh/setup-uv@v10.2.0
 
+    - if: inputs.judge == 'true'
+      shell: bash
+      env:
+        TITLE: ${{ github.event.pull_request.title || github.event.head_commit.message }}
+        BODY: ${{ github.event.pull_request.body }}
+      run: |
+        npm install -g --silent @anthropic-ai/claude-code@2.1.319
+        printf '%s\n\n%s\n' "$TITLE" "$BODY" > "$RUNNER_TEMP/snitch-request.md"
+
     - id: diff
       shell: bash
       env:
@@ -51,6 +70,8 @@ runs:
         HEAD: ${{ inputs.head }}
         STRICT: ${{ inputs.strict }}
         SNITCH_PYTHON: ${{ inputs.python }}
+        JUDGE: ${{ inputs.judge }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
       run: |
         if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
           echo "::error::base commit $BASE is not in the checkout; use actions/checkout with fetch-depth: 0"
@@ -58,8 +79,10 @@ runs:
         fi
         set +e
         # always --strict, so an incomplete check is never reported as a clean one
+        judge=()
+        if [ "$JUDGE" = "true" ]; then judge=(--request-file "$RUNNER_TEMP/snitch-request.md"); fi
         uv run --quiet --project "$GITHUB_ACTION_PATH" snitch diff "$BASE" "$HEAD" \
-          --sarif snitch.sarif --strict > snitch-receipt.md
+          --sarif snitch.sarif --strict "${judge[@]}" > snitch-receipt.md
         status=$?
         set -e
         if [ "$status" -eq 3 ]; then

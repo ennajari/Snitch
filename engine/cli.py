@@ -94,14 +94,35 @@ def _export_commit(sha: str, dest: Path) -> None:
         tar.extractall(dest, filter="data")
 
 
+def _judge(events: list[SnitchEvent], request: Path | None) -> list[SnitchEvent]:
+    """With a request file: ask the opt-in judge about each event (engine/judge.py)."""
+    if request is None or not events:
+        return events
+    from engine.judge import apply
+
+    return apply(request.read_text(), events)
+
+
+def _flagged(events: list[SnitchEvent]) -> list[SnitchEvent]:
+    """Events still flagged: not judged legitimate."""
+    return [e for e in events if e.judge_verdict != "legitimate"]
+
+
 def _run(
-    before: Path, after: Path, session_id: str, sarif: Path | None, strict: bool
+    before: Path,
+    after: Path,
+    session_id: str,
+    sarif: Path | None,
+    strict: bool,
+    request: Path | None = None,
 ) -> None:
-    """Run every detector, record the events, print the receipt, exit 1 on any event."""
+    """Run every detector, record the events, print the receipt, exit 1 on any event
+    the judge (if asked) did not clear."""
     root = Path(_git("rev-parse", "--show-toplevel"))
     events, warnings = run_detectors(
         before, after, session_id, python=find_python(root)
     )
+    events = _judge(events, request)
     for warning in warnings:
         typer.echo(f"warning: {warning}", err=True)
 
@@ -114,9 +135,19 @@ def _run(
     finally:
         ledger.close()
 
-    _write_sarif(sarif, events)
+    _write_sarif(sarif, _flagged(events))
     typer.echo(render(events), nl=False)
-    _exit(events, warnings, strict)
+    _exit(_flagged(events), warnings, strict)
+
+
+RequestOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--request-file",
+        help="The change's request (e.g. PR title and body): an opt-in judge "
+        "(claude -p) clears events it finds the request asked for.",
+    ),
+]
 
 
 @app.command()
@@ -125,6 +156,7 @@ def diff(
     head: Annotated[str, typer.Argument(help="Commit after the change.")],
     sarif: SarifOption = None,
     strict: StrictOption = False,
+    request_file: RequestOption = None,
 ) -> None:
     """Check the changes between two commits."""
     shas = [_commit(base), _commit(head)]
@@ -132,7 +164,7 @@ def diff(
         before, after = Path(tmp) / "before", Path(tmp) / "after"
         _export_commit(shas[0], before)
         _export_commit(shas[1], after)
-        _run(before, after, f"diff:{shas[0]}..{shas[1]}", sarif, strict)
+        _run(before, after, f"diff:{shas[0]}..{shas[1]}", sarif, strict, request_file)
 
 
 @app.command()
@@ -170,13 +202,15 @@ def compare(
     ] = False,
     sarif: SarifOption = None,
     strict: StrictOption = False,
+    request_file: RequestOption = None,
 ) -> None:
     """Check the changes between two directories (no git, no ledger)."""
     for path in (before, after):
         if not path.is_dir():
             raise _fail(f"not a directory: {path}")
     events, warnings = run_detectors(before, after, "compare")
-    _write_sarif(sarif, events)
+    events = _judge(events, request_file)
+    _write_sarif(sarif, _flagged(events))
     if as_json:
         typer.echo(
             json.dumps(
@@ -190,7 +224,7 @@ def compare(
         for warning in warnings:
             typer.echo(f"warning: {warning}", err=True)
         typer.echo(render(events), nl=False)
-    _exit(events, warnings, strict)
+    _exit(_flagged(events), warnings, strict)
 
 
 @app.command()
