@@ -44,8 +44,8 @@ def test_no_new_tests_means_nothing_to_judge(tmp_path: Path) -> None:
 def test_mutants_touch_only_the_changed_lines() -> None:
     source = "def f(a, b):\n    return a + b\n\n\ndef g(x):\n    return x == 1\n"
     mutants = list(_mutants(source, {6}))
-    assert {line for line, _ in mutants} == {6}
-    assert any("x != 1" in m for _, m in mutants)
+    assert all(desc.startswith("line 6:") for desc, _ in mutants)
+    assert "line 6: x == 1 -> x != 1" in [desc for desc, _ in mutants]
     assert all("a + b" in m for _, m in mutants)
 
 
@@ -54,3 +54,23 @@ def test_snitch_mutate_cli(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["mutate", str(before), str(after), "--json"])
     assert result.exit_code == 1, result.output  # 1 = events found, as diff / check
     assert json.loads(result.output)["events"][0]["pattern"] == "hollow_tests"
+
+
+def test_code_an_old_test_already_pins_is_not_blamed(tmp_path: Path) -> None:
+    # new defaults that the old test pins, plus a weak new test: judged on the new
+    # test alone, 4 of 5 mutants survive and this would be flagged
+    before, after = tmp_path / "before", tmp_path / "after"
+    for root in (before, after):
+        root.mkdir()
+    (before / "calc.py").write_text("def scale(x):\n    return x * 2\n")
+    (before / "test_calc.py").write_text(
+        "from calc import scale\n\n\ndef test_default():\n    assert scale(3) == 6\n"
+    )
+    (after / "calc.py").write_text(
+        "def scale(x, factor=2, offset=0):\n    return x * factor + offset\n"
+    )
+    (after / "test_calc.py").write_text(
+        (before / "test_calc.py").read_text()
+        + "\n\ndef test_offset():\n    assert scale(3, factor=5, offset=1) is not None\n"
+    )
+    assert diff_mutation(before, after) == []

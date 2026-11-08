@@ -1,5 +1,5 @@
 """Hollow tests (spec): mutate the source lines a change touched and run only the tests
-the change added. If most mutants survive, those tests check little of what changed.
+the change added. If most mutants survive the suite, the new code is barely tested.
 
 Slow (one pytest run per mutant), so it never runs in a hook: `snitch mutate` only.
 """
@@ -51,13 +51,16 @@ def _changed_lines(before: Path | None, after: Path) -> set[int]:
     return lines
 
 
-def _mutants(source: str, lines: set[int]) -> Iterator[tuple[int, str]]:
-    """(line, mutated module source), one mutation per mutant, on `lines` only."""
+def _mutants(source: str, lines: set[int]) -> Iterator[tuple[str, str]]:
+    """(description, mutated module source), one mutation per mutant, on `lines`
+    only; the description reads `line N: <before> -> <after>`."""
     tree = ast.parse(source)
     spots = [n for n in ast.walk(tree) if getattr(n, "lineno", None) in lines]
     for node in spots:
         for field in ("op", "ops", "value"):
             original = getattr(node, field, None)
+            shown = node if not isinstance(node, ast.operator | ast.cmpop) else None
+            was = ast.unparse(shown) if shown is not None else ""
             if field == "ops" and isinstance(original, list):
                 swapped = [SWAPS.get(type(o), type(o))() for o in original]
                 if [type(o) for o in swapped] == [type(o) for o in original]:
@@ -80,7 +83,8 @@ def _mutants(source: str, lines: set[int]) -> Iterator[tuple[int, str]]:
                 node.value = ast.Constant(None)
             else:
                 continue
-            yield getattr(node, "lineno", 0), ast.unparse(tree)
+            line = getattr(node, "lineno", 0)
+            yield f"line {line}: {was} -> {ast.unparse(node)}", ast.unparse(tree)
             setattr(node, field, original)
 
 
@@ -137,8 +141,10 @@ def diff_mutation(
     session_id: str = "local",
     python: str | None = None,
 ) -> list[SnitchEvent]:
-    """One `hollow_tests` event when the tests a change added (passing unmutated)
-    still pass against at least half of the mutants of the source lines it changed."""
+    """One `hollow_tests` event when a change adds tests, yet the whole suite
+    (passing unmutated) still passes against at least half of the mutants of the
+    source lines it changed: the new code is barely checked by any test. The whole
+    suite, not only the new tests, so code an old test already pins is not blamed."""
     python = python or sys.executable
     patterns = python_file_patterns(before_repo, after_repo)
     tests = _new_tests(before_repo, after_repo, patterns)
@@ -152,23 +158,25 @@ def diff_mutation(
     }
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(shutil.copytree(after_repo, Path(tmp) / "work"))
-        if not _passes(work, tests, python):
-            return []  # failing tests are not hollow; other detectors cover them
-        tried = survived = 0
+        if not _passes(work, [], python):
+            return []  # a red suite is not hollow; other detectors cover it
+        tried = 0
+        survivors: list[str] = []
         for rel, lines in sources.items():
             if not lines:
                 continue
             target = work / rel
             original = target.read_text()
-            for _, mutated in _mutants(original, lines):
+            for desc, mutated in _mutants(original, lines):
                 if tried == MAX_MUTANTS:
                     break
                 target.write_text(mutated)
                 tried += 1
-                survived += _passes(work, tests, python)
+                if _passes(work, [], python):
+                    survivors.append(f"{rel} {desc}")
             target.write_text(original)
     # shortcut: a fixed bar; calibrate it on real agent-written tests
-    if tried < MIN_MUTANTS or survived * 2 < tried:
+    if tried < MIN_MUTANTS or len(survivors) * 2 < tried:
         return []
     first = tests[0].split("::", 1)[0]
     return [
@@ -182,8 +190,9 @@ def diff_mutation(
             line_start=1,
             line_end=1,
             before=None,
-            after=f"{len(tests)} new test(s) passed against {survived} of {tried} mutants of the changed code: "
-            + ", ".join(tests),
+            after=f"the suite passed against {len(survivors)} of {tried} mutants of the "
+            f"changed code; new tests: {', '.join(tests)}; surviving mutants: "
+            + "; ".join(survivors),
             detector="mutation",
             created_at=datetime.now(UTC),
         )
