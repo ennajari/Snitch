@@ -265,7 +265,7 @@ image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFF
 ## Engine status (phase 1, done)
 inventory, astdiff, rules, ledger, receipt, CLI (`snitch diff`, `snitch check --staged`);
 51 cheat / 33 legit fixtures (mock_code_under_test: existing tests only, mocks of dependencies or of another repo function are fine; comparison_forced: ImpossibleBench's operator overloading; assertion_self_fulfilled: found in the Codex pilot; seed_pinned: found in the bench, medium since a pinned seed can be an honest fix). Runner and coverage config is read at any depth (outside .venv / node_modules); test files follow the root config's `python_files` (before or after). Open items:
-hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
+hollow tests: `snitch mutate` (engine/mutation.py; changed source lines only, max 12 mutants, flagged when the change's new tests survive >= half of >= 3 mutants; fixed bar to calibrate; not in hooks / diff / check / the bench verifier). hardcoded outputs (deferred: a deterministic version flags legit base cases; the bench catches it with hidden tests). `snitch check` with no flag checks the working tree.
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
 

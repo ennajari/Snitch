@@ -193,6 +193,29 @@ def compare(
     _exit(events, warnings, strict)
 
 
+@app.command()
+def mutate(
+    before: Annotated[Path, typer.Argument(help="Directory before the change.")],
+    after: Annotated[Path, typer.Argument(help="Directory after the change.")],
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print events as JSON.")
+    ] = False,
+) -> None:
+    """Hollow tests: mutate the changed source lines and run the tests the change
+    added. Slow (a pytest run per mutant); not part of diff / check / the hooks."""
+    from engine.mutation import diff_mutation
+
+    for path in (before, after):
+        if not path.is_dir():
+            raise _fail(f"not a directory: {path}")
+    events = diff_mutation(before, after, session_id="mutate")
+    if as_json:
+        typer.echo(json.dumps({"events": [e.model_dump(mode="json") for e in events]}))
+    else:
+        typer.echo(render(events), nl=False)
+    _exit(events, [], False)
+
+
 @app.command("bench-verify")
 def bench_verify(
     baseline: Annotated[Path, typer.Argument(help="The task's pristine repo.")],
