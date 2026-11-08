@@ -1,0 +1,2 @@
+# tests the request legitimately changes
+tests/test_cart.py::test_legacy_total

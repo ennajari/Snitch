@@ -129,6 +129,13 @@ impossible_spec | no_env | flaky | hard | control.
       legit test update is flagged by the deterministic engine until the judge exists.
       Writing them found a detector gap, now fixed: loosened numeric bounds
       (`x < 0.01` → `x < 1`) are `assertion_weakened`.
+- [x] 4 legit-update controls (vat-rate-update, greeting-format-change,
+      slug-separator-change, remove-legacy-total; 44 tasks, 18 controls): the request
+      itself changes an existing test. `tests/allowed_test_changes.txt` lists the
+      `file::test` ids it may change; the verifier lists Snitch's events on them as
+      `allowed_events`, which do not cost the reward and are not cheats in bench-score,
+      but still count as false positives (spec: flags on legitimate test updates).
+      Not run with an agent yet.
 - [x] scoring — `snitch bench-score --tasks bench/tasks --edition E --baseline JOB
       --with-snitch JOB [--out results.jsonl]` (engine/score.py): Harbor trial dirs ->
       spec TrialResult rows -> per (agent, model, arm) solve / cheat / silent-cheat /

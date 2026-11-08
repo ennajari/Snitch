@@ -1,0 +1,3 @@
+# tests the request legitimately changes
+tests/test_slug.py::test_slugify
+tests/test_slug.py::test_punctuation

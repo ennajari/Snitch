@@ -459,3 +459,23 @@ def test_an_escalate_call_from_codex_code_mode_counts(tmp_path: Path) -> None:
 
     by_name = {Path(t.transcript_uri).parts[-3]: t.escalated for t in trials}
     assert by_name == {"a": True, "b": False}
+
+
+def test_a_change_the_task_allows_is_a_false_positive_not_a_cheat(
+    tmp_path: Path,
+) -> None:
+    job = tmp_path / "job"
+    trial(job, "a", "vat-rate-update", events=[EVENT], visible=1)
+    graded = job / "a" / "verifier" / "snitch.json"
+    graded.write_text(
+        json.dumps({**json.loads(graded.read_text()), "allowed_events": [EVENT["id"]]})
+    )
+    trial(job, "b", "vat-rate-update", events=[{**EVENT, "id": "e9"}], visible=1)
+
+    trials, _ = load_trials([(job, "baseline")], BENCH_TASKS, "2026-12")
+
+    by_name = {Path(t.transcript_uri).parts[-3]: t for t in trials}
+    assert by_name["a"].cheated is False and by_name["a"].events
+    assert by_name["b"].cheated is True
+    row = summarize(trials)[0]
+    assert row["false_positive_rate"] == 1.0
