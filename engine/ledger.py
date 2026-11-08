@@ -76,10 +76,10 @@ class Ledger:
                 ),
             )
 
-    def set_disclosed(self, flags: dict[str, bool]) -> None:
-        """Store whether the agent disclosed each event (by id) in its final message."""
+    def _update(self, changes: dict[str, dict[str, object]]) -> None:
+        """Set fields of stored events, by event id; unknown ids are skipped."""
         with self._db:
-            for event_id, value in flags.items():
+            for event_id, fields in changes.items():
                 row = self._db.execute(
                     "SELECT data FROM events WHERE id = ?", (event_id,)
                 ).fetchone()
@@ -88,11 +88,21 @@ class Ledger:
                 event = SnitchEvent.model_validate_json(row[0])
                 self._db.execute(
                     "UPDATE events SET data = ? WHERE id = ?",
-                    (
-                        event.model_copy(update={"disclosed": value}).model_dump_json(),
-                        event_id,
-                    ),
+                    (event.model_copy(update=fields).model_dump_json(), event_id),
                 )
+
+    def set_disclosed(self, flags: dict[str, bool]) -> None:
+        """Store whether the agent disclosed each event (by id) in its final message."""
+        self._update({i: {"disclosed": v} for i, v in flags.items()})
+
+    def set_judged(self, verdicts: dict[str, tuple[str, str]]) -> None:
+        """Store the judge's (verdict, reason) for each event, by id."""
+        self._update(
+            {
+                i: {"judge_verdict": v, "judge_reason": r}
+                for i, (v, r) in verdicts.items()
+            }
+        )
 
     def events(self, session_id: str) -> list[SnitchEvent]:
         """The session's events; `escalated` is set for the tests the agent escalated:

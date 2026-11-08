@@ -20,6 +20,8 @@ def _status(event: SnitchEvent) -> str:
     """Suffix for an event's heading; empty while nothing is known yet."""
     if event.escalated:
         return " — escalated"
+    if event.judge_verdict == "legitimate":
+        return f" — judged legitimate: {event.judge_reason}"
     if event.disclosed is None:
         return ""
     return " — disclosed" if event.disclosed else " — not disclosed"

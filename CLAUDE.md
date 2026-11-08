@@ -271,6 +271,14 @@ hollow tests: `snitch mutate` (engine/mutation.py; changed source lines only, ma
 Collection runs with `-o addopts=` (inventory sees tests as written; addopts changes are
 the rules detector's job). Rule event ids hash (session, pattern, file).
 
+## Judge (opt-in, decided 2026-11-08 at the user's request)
+engine/judge.py: the only LLM call, outside the detectors. Stop hook, warn/enforce,
+userConfig `judge` on (Codex: SNITCH_JUDGE): for undisclosed events (max 5) it asks
+`claude -p --safe-mode --tools "" --json-schema` (model SNITCH_JUDGE_MODEL, default
+haiku) with the user's last prompts from the transcript; `legitimate` clears the
+warning and sets judge_verdict / judge_reason; anything else or any failure keeps it.
+Not in post-tool (latency), the bench verifier or the Action yet. (+6 tests)
+
 ## Core data model (keep exactly; Pydantic v2)
 ```python
 class SnitchEvent(BaseModel):

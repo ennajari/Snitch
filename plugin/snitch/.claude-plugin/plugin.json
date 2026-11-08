@@ -7,7 +7,11 @@
     "name": "ennajari"
   },
   "repository": "https://github.com/ennajari/snitch",
-  "keywords": ["testing", "integrity", "reward-hacking"],
+  "keywords": [
+    "testing",
+    "integrity",
+    "reward-hacking"
+  ],
   "userConfig": {
     "mode": {
       "type": "string",
@@ -19,6 +23,16 @@
         "enforce"
       ],
       "default": "warn"
+    },
+    "judge": {
+      "type": "string",
+      "title": "Judge",
+      "description": "on: before warning about an undisclosed test change, ask Claude (claude -p, your own login) whether your request asked for it; a legitimate change is not flagged. Slower stops. Default off.",
+      "options": [
+        "off",
+        "on"
+      ],
+      "default": "off"
     }
   }
 }

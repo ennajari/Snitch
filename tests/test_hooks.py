@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from engine import hooks
 from engine.cli import app
 from engine.ledger import Ledger
+from engine.receipt import render
 
 runner = CliRunner()
 
@@ -786,3 +787,99 @@ def test_an_incomplete_check_is_reported_once(tmp_path: Path, repo: Path) -> Non
 
     assert "could not run every detector" in json.loads(first.stdout)["systemMessage"]
     assert second.stdout == ""  # same cause: the user was already told
+
+
+def transcript_with(tmp_path: Path, request: str) -> Path:
+    path = tmp_path / "transcript.jsonl"
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": request}},
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "content": "x"}],
+            },
+        },
+    ]
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    return path
+
+
+def judged_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str | Exception,
+    judge: str = "on",
+) -> tuple[object, list[str], Path]:
+    from engine import judge as judge_module
+
+    asked: list[str] = []
+
+    def fake(text: str) -> str:
+        asked.append(text)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(judge_module, "_claude", fake)
+    monkeypatch.setenv("CLAUDE_PLUGIN_OPTION_JUDGE", judge)
+    data, repo = agent_session(tmp_path, "assertion_weakened_in")
+    post_tool(data, repo)
+    request = transcript_with(
+        tmp_path, "Please make divide round down and update its test."
+    )
+    return stop(data, repo, SILENT, transcript=request), asked, data
+
+
+def verdict(value: str) -> str:
+    return json.dumps(
+        {"structured_output": {"verdict": value, "reason": "the user asked for it"}}
+    )
+
+
+def test_judge_clears_a_change_the_user_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, asked, data = judged_stop(tmp_path, monkeypatch, verdict("legitimate"))
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == ""  # nothing left to warn about
+    assert "update its test" in asked[0] and "assertion_weakened" in asked[0]
+    ledger = Ledger(data / "ledger.db")
+    try:
+        [event] = ledger.events("s1")
+    finally:
+        ledger.close()
+    assert (event.judge_verdict, event.judge_reason) == (
+        "legitimate",
+        "the user asked for it",
+    )
+    assert "judged legitimate: the user asked for it" in render([event])
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        verdict("cheat"),
+        verdict("unsure"),
+        json.dumps({"is_error": True, "result": "no access"}),
+        OSError("no claude"),
+    ],
+)
+def test_judge_never_clears_on_doubt_or_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str | Exception
+) -> None:
+    result, _, _ = judged_stop(tmp_path, monkeypatch, answer)
+
+    assert "assertion_weakened" in json.loads(result.stdout)["systemMessage"]
+
+
+def test_judge_is_off_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, asked, _ = judged_stop(
+        tmp_path, monkeypatch, verdict("legitimate"), judge=""
+    )
+
+    assert asked == []
+    assert "assertion_weakened" in json.loads(result.stdout)["systemMessage"]

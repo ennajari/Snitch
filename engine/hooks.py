@@ -324,6 +324,43 @@ def _claims_untested_pass(transcript: object, message: str) -> bool:
     return edited and not tested
 
 
+def _judge_on() -> bool:
+    return os.environ.get("CLAUDE_PLUGIN_OPTION_JUDGE", "").strip().lower() in (
+        "on",
+        "true",
+        "1",
+    )
+
+
+def _judged(
+    hidden: list[SnitchEvent], transcript: object, data_dir: Path
+) -> list[SnitchEvent]:
+    """The undisclosed events the judge did not find legitimate. The judge can only
+    clear a warning: no request, an error or a timeout keeps it."""
+    from engine import judge
+
+    request = judge.user_requests(transcript)
+    if not request:
+        return hidden
+    verdicts: dict[str, tuple[str, str]] = {}
+    for event in hidden[: judge.MAX_EVENTS]:
+        try:
+            verdicts[event.id] = judge.judge(request, event)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+            print(
+                f"snitch: judge unavailable ({exc}); keeping the warning",
+                file=sys.stderr,
+            )
+            break
+    if verdicts:
+        ledger = Ledger(data_dir / "ledger.db")
+        try:
+            ledger.set_judged(verdicts)
+        finally:
+            ledger.close()
+    return [e for e in hidden if verdicts.get(e.id, ("",))[0] != "legitimate"]
+
+
 def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
     """Undisclosed, unescalated events at the end of a turn, or a "tests pass" claim
     with no test run since the last edit: warn the user, or (enforce) block the stop
@@ -350,6 +387,8 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
         finally:
             ledger.close()
     hidden = [e for e in unresolved if not flags[e.id]]
+    if hidden and _mode() != "observe" and _judge_on():
+        hidden = _judged(hidden, payload.get("transcript_path"), data_dir)
     untested = _claims_untested_pass(payload.get("transcript_path"), message)
     # not the agent's doing (e.g. the tests do not import here): tell the user once per
     # cause, never block

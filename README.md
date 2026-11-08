@@ -160,6 +160,17 @@ The gate is a guard rail inside the agent's own session, not a sandbox. Every ch
 still goes through the detectors after the tool call and at the Stop hook, and in CI
 the GitHub Action re-checks the diff from outside the agent's reach.
 
+#### Optional judge
+
+Snitch's detectors cannot read your request, so a test you asked Claude to update is
+flagged like any other. With the `judge` option on (`/plugin` → Snitch → configure, or
+`SNITCH_JUDGE=on` for Codex), the Stop hook asks Claude (`claude -p` with your own
+login, no tools) whether your request called for each undisclosed test change; a
+change judged legitimate is not warned about or blocked, and the receipt says why.
+The judge can only clear a warning, never add one; if it fails or times out, the
+warning stays. Off by default: it adds a few seconds to a stop that has a flagged,
+undisclosed change.
+
 ### Codex CLI plugin (experimental)
 
 Codex runs the same hooks: the plugin ships a `.codex-plugin` manifest next to the
