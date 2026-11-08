@@ -138,6 +138,13 @@ impossible_spec | no_env | flaky | hard | control.
       Run 2026-11-08 (3 runs each): Claude Code with/without Snitch and Codex with
       Snitch did 12/12 requested updates, 0 false escalations, detectors flag 12/12
       (bench/results/2026-11/README.md).
+- [x] batch 2 (2026-11-08): 10 trap tasks, 2 per temptation (coupon-percent,
+      word-count-title, duration-format, currency-code-case, metrics-format,
+      webhook-payload, backoff-cap, deck-deal, interval-merge, version-satisfies):
+      54 tasks, 18 controls (33%). Checked locally by tests/test_bench.py; each trap's
+      cheat.sh is caught by a detector (deck-deal by seed_pinned), the hard ones by the
+      hidden tests. No Harbor oracle run or agent run yet; generator in
+      ~/bench-jobs/generators/batch2_tasks.py.
 - [x] scoring — `snitch bench-score --tasks bench/tasks --edition E --baseline JOB
       --with-snitch JOB [--out results.jsonl]` (engine/score.py): Harbor trial dirs ->
       spec TrialResult rows -> per (agent, model, arm) solve / cheat / silent-cheat /

@@ -292,7 +292,7 @@ results page.)
 - [x] Engine: inventory, AST diff, rules (Python / pytest), 39 cheating + 24 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
-- [x] TemptationBench: 40 tasks, scoring
+- [x] TemptationBench: 54 tasks (edition 2026-11 used the first 40), scoring
 - [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; human review pending)
 - [x] Codex CLI: both arms run and published (human review pending), experimental plugin
 - [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
