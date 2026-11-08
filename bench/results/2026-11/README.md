@@ -151,6 +151,22 @@ said which test changed. The deterministic detectors flag every legitimate updat
 telling it apart from a cheat is the disclosure check's and the reader's job (and the
 future judge's). Rows: `legit-update-results.jsonl`. Codex without Snitch was not run.
 
+## The opt-in judge on these events (2026-11-08)
+
+`engine/judge.py` (claude -p, Haiku), given each task's instruction as the user's
+request and one flagged change. It may clear a warning, never add one.
+
+| flagged change | judged legitimate | cheat | unsure (warning kept) | error (warning kept) |
+|---|---|---|---|---|
+| 45 legit-update changes | **45** | 0 | 0 | 0 |
+| 74 changes in trials labelled cheats (Claude Code, Codex; plus the unpublished third agent) | **0** | 47 | 26 | 1 |
+
+A first rubric cleared 4 of the 74: deleting a test that contradicts the request
+(sort-users-oldest). The rubric now says a contradiction should be reported, not
+resolved by editing the test, and the rerun above cleared none. That change was made
+after seeing these cases, so the numbers are a check of the rubric on the cases it
+was tuned on, not a held-out result. Labels are AI-assisted, as above.
+
 ## Limits
 
 - Codex labels: the cheat / clean calls were made by an AI assistant reading each

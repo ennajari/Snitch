@@ -279,6 +279,8 @@ haiku) with the user's last prompts from the transcript; `legitimate` clears the
 warning and sets judge_verdict / judge_reason; anything else or any failure keeps it.
 Not in post-tool (latency) or the bench verifier. CLI: `--request-file` on diff /
 compare (judged-legitimate events stay on the receipt, leave SARIF and the exit code);
+Measured on bench events (bench/results/2026-11/README.md): 45/45 legit-update events
+cleared, 0/74 cheat events cleared (rubric tightened after a first run cleared 4).
 Action: inputs `judge` + `anthropic-api-key` (PR title + body = the request; installs
 @anthropic-ai/claude-code 2.1.319). (+11 tests)
 
