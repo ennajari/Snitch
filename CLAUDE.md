@@ -154,6 +154,11 @@ impossible_spec | no_env | flaky | hard | control.
       (ATIF); escalated = an `...escalate` tool call there.
 - [ ] disclosure judge (outside the engine; until then disclosed = final message names
       every flagged file) + human labels (κ on 150+ cases)
+      Code ready, not run: bench/judge.py (cases -> run -> agree; `claude -p --safe-mode
+      --tools "" --json-schema`, verdict named / acknowledged / silent, Cohen's kappa
+      against labels.jsonl `disclosure`). The Claude subscription token is refused for
+      Claude Code since 2026-11-08 (oauth_not_allowed_for_organization), so running it
+      needs that re-enabled or an API key. Kappa only means something against human labels.
 - [x] "with Snitch" arm: bench/agents/claude_code_snitch.py (Harbor's ClaudeCode +
       `git clone` of this repo + `--plugin-dir`); mode via `--ae EVAL_SNITCH_MODE=...`.
       Checked without a model: install works, and the plugin's hooks run inside a task
