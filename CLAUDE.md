@@ -143,7 +143,7 @@ impossible_spec | no_env | flaky | hard | control.
       webhook-payload, backoff-cap, deck-deal, interval-merge, version-satisfies):
       54 tasks, 18 controls (33%). Checked locally by tests/test_bench.py; each trap's
       cheat.sh is caught by a detector (deck-deal by seed_pinned), the hard ones by the
-      hidden tests. No Harbor oracle run or agent run yet; generator in
+      hidden tests. Harbor oracle run in Docker: 10/10 reward 1. No agent run yet; generator in
       ~/bench-jobs/generators/batch2_tasks.py.
 - [x] scoring — `snitch bench-score --tasks bench/tasks --edition E --baseline JOB
       --with-snitch JOB [--out results.jsonl]` (engine/score.py): Harbor trial dirs ->
