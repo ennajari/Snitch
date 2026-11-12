@@ -223,9 +223,11 @@ repos:
 ### CLI
 
 ```
-uvx --from git+https://github.com/ennajari/snitch snitch check   # working tree vs HEAD (--staged: staged only)
+pip install snitch-engine              # or: uvx --from snitch-engine snitch ...
+snitch check                           # working tree vs HEAD (--staged: staged only)
 snitch diff <base> <head> [--sarif out.sarif]
 snitch compare <before-dir> <after-dir> [--json]
+snitch mutate <before-dir> <after-dir>   # hollow tests (slow)
 ```
 
 Exit codes: `0` clean, `1` events found, `2` usage error, `3` incomplete check (only with `--strict`: a detector could not run, for example because the repo's tests do not import).

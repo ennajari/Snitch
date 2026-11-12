@@ -241,7 +241,9 @@ image, from `uv export --no-dev`) in each `tests/wheels/`; run with `--ve UV_OFF
 - [x] `.github/workflows/ci.yml`: tests + ruff + mypy; action self-test (commits a
       weakened assert, expects 1 event); on PRs, Snitch reviews this repo (report only).
       Actions pinned to Node 24 releases (checkout@v7, setup-uv@v10.2.0, upload-sarif@v4).
-- [ ] publish: a `v1` tag / Marketplace listing; the spec's separate `snitch-action` repo
+- [x] PyPI: `snitch-engine` 0.3.0 published 2026-11-12 by trusted publishing
+      (.github/workflows/publish.yml, environment `pypi`; runs on each published release).
+- [ ] publish: Marketplace listing (release UI); the spec's separate `snitch-action` repo
 - [ ] TypeScript support (cut first if behind)
 
 ## Plugin platform notes (checked against Claude Code 2.1.301 docs)
