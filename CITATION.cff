@@ -12,8 +12,8 @@ abstract: >-
 authors:
   - family-names: Ennajari
     given-names: Abdellah
-version: 0.2.0
-date-released: "2026-10-25"
+version: 0.3.0
+date-released: "2026-11-12"
 license: MIT
 url: "https://ennajari.github.io/Snitch/"
 repository-code: "https://github.com/ennajari/Snitch"
