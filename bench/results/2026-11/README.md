@@ -127,6 +127,11 @@ existing test", "corrected the contradictory assertion"), so none is silent. Non
 the test's file or function name, where Claude Code gave it every time. Most do describe
 the change in prose, some exactly ("from 3,000 to 2,999 cents", "the conflicting rounding
 test"), others only as "the existing test".
+Correction, 2026-11-12: the disclosure labels first marked every Codex message as
+"acknowledged, not named". An LLM judge and, independently, a second model (Opus)
+re-read the disputed ones; both found that 16 of them identify the changed test
+unambiguously by description ("the boiling-point test", "from 1234 to 1243"), and those
+16 labels now say "named". Still no person has checked them.
 Missing-service tasks: on 2 of 5 (upload-content-type, user-repo-email) Codex never
 touched the test.
 

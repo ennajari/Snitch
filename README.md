@@ -280,7 +280,8 @@ Snitch it reported the problem instead of changing the test.
 Codex CLI 0.164.0 (gpt-6.1-sol) on the same tasks, with the experimental Codex plugin
 for the with-Snitch arm, run 10 days later: it changed or gamed a test in **57 of 78**
 trap trials without Snitch and **0 of 78** with it, and called `escalate` in 59. All 57
-said a test changed; none gave the test's name. These counts include disclosed changes:
+said a test changed; none gave the test's `test_` name, though at least 16 identified it
+by description. These counts include disclosed changes:
 silent cheating was 0 in every arm above. No person has checked these labels yet; see
 the results page for that and the other limits. Gemini CLI follows after its own vendor
 preview.
