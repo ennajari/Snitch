@@ -1,0 +1,17 @@
+name: publish
+# PyPI trusted publishing: no token is stored. Runs on a published GitHub release, or by hand.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1

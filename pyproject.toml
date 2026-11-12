@@ -5,6 +5,8 @@ description = "Integrity layer for AI coding agents: detects test cheating."
 requires-python = ">=3.12"
 license = "MIT"
 readme = "README.md"
+authors = [{ name = "Abdellah Ennajari" }]
+keywords = ["ai-agents", "testing", "reward-hacking", "pytest", "claude-code", "codex"]
 dependencies = [
     "mcp>=2.3.0",
     "pydantic>=2.14.0",
@@ -14,6 +16,11 @@ dependencies = [
     "tree-sitter-python>=0.25.0",
     "typer>=0.27.3",
 ]
+
+[project.urls]
+Homepage = "https://ennajari.github.io/Snitch/"
+Source = "https://github.com/ennajari/Snitch"
+Results = "https://github.com/ennajari/Snitch/blob/master/bench/results/2026-11/README.md"
 
 [project.scripts]
 snitch = "engine.cli:app"
