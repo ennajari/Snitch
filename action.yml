@@ -1,4 +1,4 @@
-name: Snitch
+name: Snitch for AI coding agents
 description: Flags pull requests that make tests pass by weakening, skipping or deleting them.
 author: ennajari
 branding:

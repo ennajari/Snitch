@@ -1,6 +1,6 @@
 [project]
 name = "snitch-engine"
-version = "0.3.0"
+version = "0.3.1"
 description = "Integrity layer for AI coding agents: detects test cheating."
 requires-python = ">=3.12"
 license = "MIT"
