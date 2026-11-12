@@ -182,7 +182,7 @@ impossible_spec | no_env | flaky | hard | control.
       images preinstall Claude Code 2.1.310; the Snitch MCP server sets alwaysLoad.
 - [x] Codex CLI 0.164.0, 120 trials per arm: published 2026-11-08 after the vendor
       preview (no vendor replied) in bench/results/2026-11/, the site leaderboard and
-      release bench-2026-11-codex. Labels AI-assisted; human review pending. This file is
+      release bench-2026-11-codex. Labels reviewed by AI only (decided 2026-11-12). This file is
       public: unpublished results (the Gemini run) stay out of it.
       With-Snitch arm (bench/agents/codex_snitch.py, warn) started 2026-11-03 into
       ~/bench-jobs/2026-11/codex_snitch (~/bench-jobs/2026-11/codex-snitch-run.sh).

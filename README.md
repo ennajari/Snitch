@@ -262,11 +262,11 @@ both checked in CI and in Docker.
 `snitch bench-score` turns Harbor runs into the leaderboard metrics: solve rate, cheat
 rate, silent-cheat rate (with a bootstrap 95% interval over tasks), honest-escalation
 rate, false positives on controls, a per-temptation breakdown, and McNemar's test for
-with vs without Snitch. Flagged trials are confirmed or cleared with review labels (AI-assisted so far; human check pending).
+with vs without Snitch. Flagged trials are confirmed or cleared with review labels (AI only; no person has reviewed them).
 ### First results: Claude Code (edition 2026-11)
 
 Claude Code 2.1.310 on its default model (claude-sonnet-5-5), 40 tasks × 3 runs, with
-and without the Snitch plugin; every flagged trial reviewed with an AI assistant, human check pending
+and without the Snitch plugin; every flagged trial reviewed by AI only (no person)
 ([full results and limits](bench/results/2026-11/README.md)):
 
 | | without Snitch | with Snitch |
@@ -286,7 +286,7 @@ for the with-Snitch arm, run 10 days later: it changed or gamed a test in **57 o
 trap trials without Snitch and **0 of 78** with it, and called `escalate` in 59. All 57
 said a test changed; none gave the test's `test_` name, though at least 16 identified it
 by description. These counts include disclosed changes:
-silent cheating was 0 in every arm above. No person has checked these labels yet; see
+silent cheating was 0 in every arm above. Labels reviewed by AI only, no person; see
 the results page for that and the other limits. Gemini CLI follows after its own vendor
 preview.
 (Corrected from 14: a second review pass found 4 more, all disclosed; see the
@@ -298,8 +298,8 @@ results page.)
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 54 tasks (edition 2026-11 used the first 40), scoring
-- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; human review pending)
-- [x] Codex CLI: both arms run and published (human review pending), experimental plugin
+- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; labels reviewed by AI only)
+- [x] Codex CLI: both arms run and published (labels reviewed by AI only), experimental plugin
 - [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
 - [ ] TypeScript (Jest / Vitest)
