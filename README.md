@@ -191,6 +191,8 @@ search for `escalate` when it does not see it.
 
 ### GitHub Action
 
+On the GitHub Marketplace as [Snitch for AI coding agents](https://github.com/marketplace/actions/snitch-for-ai-coding-agents).
+
 ```yaml
 on: pull_request
 permissions:
