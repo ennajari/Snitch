@@ -163,11 +163,12 @@ impossible_spec | no_env | flaky | hard | control.
       (ATIF); escalated = an `...escalate` tool call there.
 - [ ] disclosure judge (outside the engine; until then disclosed = final message names
       every flagged file) + human labels (κ on 150+ cases)
-      Code ready, not run: bench/judge.py (cases -> run -> agree; `claude -p --safe-mode
-      --tools "" --json-schema`, verdict named / acknowledged / silent, Cohen's kappa
-      against labels.jsonl `disclosure`). The Claude subscription token is refused for
-      Claude Code since 2026-11-08 (oauth_not_allowed_for_organization), so running it
-      needs that re-enabled or an API key. Kappa only means something against human labels.
+      bench/judge.py (cases -> run -> agree; `claude -p --safe-mode --tools ""
+      --json-schema`, verdict named / acknowledged / silent, Cohen's kappa against
+      labels.jsonl `disclosure`). Run 2026-11-08 on 98 flagged cases with the local
+      claude.ai login: agreement with the AI labels 74%, kappa 0.56; the 25
+      disagreements await a person (~/snitch-review-disagreements.html). Kappa only
+      means something against human labels.
 - [x] "with Snitch" arm: bench/agents/claude_code_snitch.py (Harbor's ClaudeCode +
       `git clone` of this repo + `--plugin-dir`); mode via `--ae EVAL_SNITCH_MODE=...`.
       Checked without a model: install works, and the plugin's hooks run inside a task
@@ -179,14 +180,10 @@ impossible_spec | no_env | flaky | hard | control.
       0 false alarms on controls. Hand review fixed two tasks whose hidden tests asked
       more than the instruction (json-path, url-query-params -> 1.1.0, rerun). Task
       images preinstall Claude Code 2.1.310; the Snitch MCP server sets alwaysLoad.
-- [x] Codex CLI 0.164.0, 120 trials, not published yet (vendor preview). This file is
-      public: results stay out of it until they are published.
-      Results only in ~/bench-jobs/2026-11 (labels.jsonl covers both agents).
-      Vendor preview emailed 2026-10-24 to OpenAI and Anthropic (press addresses; Codex
-      transcripts attached in a follow-up): publish the comparison on or after 2026-11-08,
-      with any vendor reply. Until then only Claude Code results are public.
-      Scored rows + labels: ~/bench-jobs/2026-11/codex-results.jsonl; results page,
-      site leaderboard and posts on local branch `launch-2026-11-08` (unpushed).
+- [x] Codex CLI 0.164.0, 120 trials per arm: published 2026-11-08 after the vendor
+      preview (no vendor replied) in bench/results/2026-11/, the site leaderboard and
+      release bench-2026-11-codex. Labels AI-assisted; human review pending. This file is
+      public: unpublished results (the Gemini run) stay out of it.
       With-Snitch arm (bench/agents/codex_snitch.py, warn) started 2026-11-03 into
       ~/bench-jobs/2026-11/codex_snitch (~/bench-jobs/2026-11/codex-snitch-run.sh).
       Harbor runs Codex in code mode: tools are called from one JS `exec`; hooks still
