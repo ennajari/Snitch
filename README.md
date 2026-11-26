@@ -11,6 +11,8 @@
 
 <p align="center">
   <a href="https://github.com/ennajari/snitch/actions/workflows/ci.yml"><img src="https://github.com/ennajari/snitch/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pypi.org/project/snitch-engine/"><img src="https://img.shields.io/pypi/v/snitch-engine" alt="PyPI"></a>
+  <a href="https://github.com/ennajari/Snitch/stargazers"><img src="https://img.shields.io/github/stars/ennajari/Snitch" alt="GitHub stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/python-3.12-blue" alt="Python 3.12">
   <img src="https://img.shields.io/badge/status-early-orange" alt="Status: early">
