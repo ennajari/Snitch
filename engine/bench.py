@@ -11,6 +11,7 @@ from pathlib import Path
 
 from engine.astdiff.diff import enclosing_test
 from engine.detect import run_detectors
+from engine.jsdiff.parse import enclosing_test_js
 from engine.models import SnitchEvent
 
 # shortcut: a fixed list of tool/cache dirs, not .gitignore; read the task's ignore
@@ -121,7 +122,14 @@ def verify(baseline: Path, work: Path, hidden: Path, python: str) -> dict[str, o
         # the visible suite as the agent left it, config and conftest included
         visible, _ = _pytest(python, _copy(work, Path(tmp) / "visible"))
         events, warnings = run_detectors(before, after, "bench")
-        in_test = {e.id: enclosing_test(work / e.file, e.line_start) for e in events}
+        in_test = {
+            e.id: (
+                enclosing_test(work / e.file, e.line_start)
+                if e.file.endswith(".py")
+                else enclosing_test_js(work / e.file, e.line_start)
+            )
+            for e in events
+        }
         # a control task whose request changes behaviour names the tests it may
         # change: Snitch still flags them (a false positive), but they do not
         # cost the reward

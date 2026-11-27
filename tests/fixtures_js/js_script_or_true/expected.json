@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "ci_or_true",
+    "severity": "high",
+    "file": "package.json",
+    "line_start": 4,
+    "line_end": 4,
+    "before": "vitest run",
+    "after": "vitest run || true",
+    "detector": "rule"
+  }
+]

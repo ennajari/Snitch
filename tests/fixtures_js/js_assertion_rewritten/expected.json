@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_rewritten",
+    "severity": "medium",
+    "file": "calc.test.ts",
+    "line_start": 3,
+    "line_end": 3,
+    "before": "expect(hours(3600)).toBe(1)",
+    "after": "expect(hours(3600) * 60).toBe(1)",
+    "detector": "ast"
+  }
+]

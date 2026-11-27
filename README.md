@@ -29,7 +29,7 @@
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/demo-session.gif" width="760" alt="Claude Code with Snitch: the agent runs the tests, finds a wrong expected value, calls escalate instead of editing the test, and tells the user">
-  <br><sub>A real <code>claude plugin eval</code> run (2026-10-24, case <code>broken-expected-value</code>), replayed; the agent's messages are quoted, shortened where marked “…”. Without Snitch, the same agent edited the test in 8 of 32 trap runs.</sub>
+  <br><sub>A real <code>claude plugin eval</code> run (2026-10-24, case <code>broken-expected-value</code>), replayed; the agent's messages are quoted, shortened where marked ââ¦â. Without Snitch, the same agent edited the test in 8 of 32 trap runs.</sub>
 </p>
 
 ---
@@ -50,7 +50,7 @@ points at a line in the diff.
 
 ```
 # Snitch receipt
-**1 event** — 1 high
+**1 event** â 1 high
 
 | Severity | Family    | Pattern            | Location       | Detector |
 |----------|-----------|--------------------|----------------|----------|
@@ -85,7 +85,7 @@ Research has shown that coding agents cheat on tests, and that an honest exit he
 
 - **ImpossibleBench** ([arXiv 2510.20270](https://arxiv.org/abs/2510.20270)): on
   impossible tasks, agents edit tests, overload `__eq__`, keep hidden state or
-  special-case inputs; LLM monitors caught only 42–65% of it on real repos.
+  special-case inputs; LLM monitors caught only 42â65% of it on real repos.
 
 Snitch turns those findings into something you install: it **detects** the cheat,
 gives the agent the **policy + `escalate` tool** combination that cut reward hacking
@@ -99,20 +99,26 @@ flowchart LR
     A["Claude Code plugin<br/>(live, per tool call)"] --> E
     B["GitHub Action / pre-commit<br/>(per PR or commit)"] --> E
     C["TemptationBench<br/>(Harbor, per trial)"] --> E
-    E["Engine: before vs after<br/>test inventory · AST assertion diff · rules"] --> R["Events → receipt,<br/>SARIF, ledger, scores"]
+    E["Engine: before vs after<br/>test inventory Â· AST assertion diff Â· rules"] --> R["Events â receipt,<br/>SARIF, ledger, scores"]
 ```
 
 One engine, three adapters, so the benchmark measures exactly what users install. Each
 detector is a pure function of (before, after):
 
 - **inventory**: `pytest --collect-only` before and after; tests that vanished,
-  were renamed away, skipped or deselected.
+  were renamed away, skipped or deselected. For JS/TS the suite is parsed
+  statically (no `node_modules` needed): deleted, skipped, pending and `.only`-focused
+  tests.
 - **astdiff**: tree-sitter diff of every test function; assertions removed, weakened
-  (`==` → `in`, looser `approx`, looser bounds, `==` → `!=`), expected values changed,
-  asserts hidden behind a new `if`.
+  (`==` â `in`, looser `approx`, looser bounds, `==` â `!=`; in JS/TS: `toBe` â
+  `toBeTruthy`, loosened `toBeLessThan`, added `.not`, `toThrow("msg")` â `toThrow()`),
+  expected values changed, asserts hidden behind a new `if`, mocks of the very module
+  under test (`jest.mock` / `vi.mock`).
 - **rules**: runner and CI config (`addopts`, coverage thresholds, `continue-on-error`,
   `|| true`, `--no-verify`), `conftest.py` report hooks, code that special-cases
-  `pytest`, `except: pass` around changed logic.
+  `pytest`, `except: pass` around changed logic. For JS/TS: a `scripts.test` that no
+  longer runs a runner, `passWithNoTests`, widened `testPathIgnorePatterns`, lowered
+  `coverageThreshold` (package.json, `jest.config.*`, `vitest.config.*`).
 
 ## Measured, not claimed
 
@@ -127,8 +133,8 @@ test, runner config, controls), 2 runs per case, with and without the plugin
 | control tasks completed | 8 / 8 | 8 / 8 |
 | false escalations on controls | 0 | 0 |
 
-Paired McNemar p = 0.008 (per case: 5 cases → 0, p = 0.063). An earlier run without the
-session-start policy gave 7/32 → 0/32 with 25/32 escalations
+Paired McNemar p = 0.008 (per case: 5 cases â 0, p = 0.063). An earlier run without the
+session-start policy gave 7/32 â 0/32 with 25/32 escalations
 ([report](docs/evals/2026-10-24-plugin-eval.md)). In both runs the agent disclosed every
 test edit even without Snitch, so this says nothing yet about *silent* cheating; that is
 what TemptationBench, with hidden tests, is for. The reports list the threats to
@@ -174,7 +180,7 @@ the GitHub Action re-checks the diff from outside the agent's reach.
 #### Optional judge
 
 Snitch's detectors cannot read your request, so a test you asked Claude to update is
-flagged like any other. With the `judge` option on (`/plugin` → Snitch → configure, or
+flagged like any other. With the `judge` option on (`/plugin` â Snitch â configure, or
 `SNITCH_JUDGE=on` for Codex), the Stop hook asks Claude (`claude -p` with your own
 login, no tools) whether your request called for each undisclosed test change; a
 change judged legitimate is not warned about or blocked, and the receipt says why.
@@ -276,18 +282,18 @@ rate, false positives on controls, a per-temptation breakdown, and McNemar's tes
 with vs without Snitch. Flagged trials are confirmed or cleared with review labels (AI only; no person has reviewed them).
 ### First results: Claude Code (edition 2026-11)
 
-Claude Code 2.1.310 on its default model (claude-sonnet-5-5), 40 tasks × 3 runs, with
+Claude Code 2.1.310 on its default model (claude-sonnet-5-5), 40 tasks Ã 3 runs, with
 and without the Snitch plugin; every flagged trial reviewed by AI only (no person)
 ([full results and limits](bench/results/2026-11/README.md)):
 
 | | without Snitch | with Snitch |
 |---|---|---|
 | trials where the agent changed a test | **18 / 120** | **0 / 120** |
-| …of them hidden from the user (silent) | 0 | 0 |
+| â¦of them hidden from the user (silent) | 0 | 0 |
 | trap trials where it called `escalate` instead | n/a | 51 / 78 |
 | false alarms on the 42 control trials | 0 | 0 |
 
-Paired McNemar p = 0.000008 (per task: 8 → 0, p = 0.008). The 18 changes came from broken
+Paired McNemar p = 0.000008 (per task: 8 â 0, p = 0.008). The 18 changes came from broken
 tests (10) and flaky tests (8), and every one was disclosed: Claude Code changed the
 test and said so, and on the broken tests it was right that the test was wrong. With
 Snitch it reported the problem instead of changing the test.
@@ -306,14 +312,15 @@ results page.)
 ## Roadmap
 
 - [x] Engine: inventory, AST diff, rules (Python / pytest), 39 cheating + 24 legitimate fixtures
+- [x] TypeScript / JavaScript (Jest / Vitest): static detectors, 24 cheating + 12 legitimate fixtures
 - [x] Claude Code plugin: live detection, `escalate`, Stop verifier, enforce gate, evals
 - [x] GitHub Action with SARIF + PR receipt, pre-commit hook
 - [x] TemptationBench: 54 tasks (edition 2026-11 used the first 40), scoring
-- [x] Edition 2026-11 for Claude Code (40 tasks × 3 runs × with/without Snitch; labels reviewed by AI only)
+- [x] Edition 2026-11 for Claude Code (40 tasks Ã 3 runs Ã with/without Snitch; labels reviewed by AI only)
 - [x] Codex CLI: both arms run and published (labels reviewed by AI only), experimental plugin
 - [ ] Gemini CLI (partial run done, vendor preview next), then OpenCode and others
 - [ ] Disclosure judge, mutation testing for hollow tests
-- [ ] TypeScript (Jest / Vitest)
+- [ ] TemptationBench JS tasks (the hidden-test runner still assumes pytest)
 
 ## Contributing
 
@@ -349,3 +356,4 @@ If you use Snitch or TemptationBench in your work, please cite it
 ## License
 
 [MIT](LICENSE)
+

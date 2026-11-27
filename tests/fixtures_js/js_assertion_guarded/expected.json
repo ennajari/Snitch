@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_guarded",
+    "severity": "high",
+    "file": "calc.test.ts",
+    "line_start": 3,
+    "line_end": 5,
+    "before": "expect(add(1, 2)).toBe(3)",
+    "after": "if (process.env.CI_STRICT) {\n    expect(add(1, 2)).toBe(3);\n  }",
+    "detector": "ast"
+  }
+]

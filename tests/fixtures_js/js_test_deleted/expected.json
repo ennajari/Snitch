@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "test_deleted",
+    "severity": "high",
+    "file": "calc.test.ts",
+    "line_start": 3,
+    "line_end": 3,
+    "before": "calc.test.ts::subtracts",
+    "after": null,
+    "detector": "inventory"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "test_script_weakened",
+    "severity": "high",
+    "file": "package.json",
+    "line_start": 4,
+    "line_end": 4,
+    "before": "jest",
+    "after": "echo done",
+    "detector": "rule"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "test_paths_ignored",
+    "severity": "medium",
+    "file": "jest.config.js",
+    "line_start": 3,
+    "line_end": 3,
+    "before": null,
+    "after": "testPathIgnorePatterns: [\"/node_modules/\", \"calc.test.ts\"],",
+    "detector": "rule"
+  }
+]

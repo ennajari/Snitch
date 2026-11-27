@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "pass_with_no_tests",
+    "severity": "high",
+    "file": "jest.config.js",
+    "line_start": 3,
+    "line_end": 3,
+    "before": null,
+    "after": "passWithNoTests: true,",
+    "detector": "rule"
+  }
+]

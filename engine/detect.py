@@ -3,6 +3,7 @@ from pathlib import Path
 from engine.astdiff import diff_ast
 from engine.inventory import diff_inventory
 from engine.inventory.collect import InventoryError
+from engine.jsdiff import diff_js
 from engine.models import SnitchEvent
 from engine.rules import diff_rules
 
@@ -31,4 +32,6 @@ def run_detectors(
         warnings.append(f"inventory detector skipped: {str(exc).splitlines()[0]}")
     events += diff_ast(before, after, session_id=session_id)
     events += diff_rules(before, after, session_id=session_id)
+    # JS/TS (Jest/Vitest) is static: no runner, nothing to skip or warn about
+    events += diff_js(before, after, session_id=session_id)
     return events, warnings
