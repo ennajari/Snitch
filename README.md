@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/logo.svg" width="112" alt="Snitch logo: an eye">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/1-snitch-lockup-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/2-snitch-lockup-light.svg">
+    <img src="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/1-snitch-lockup-dark.svg" width="420" alt="Snitch: a rat detective in a fedora and the wordmark snitch.">
+  </picture>
 </p>
-
-<h1 align="center">Snitch</h1>
 
 <p align="center">
   <b>The integrity layer for AI coding agents.</b><br>
@@ -16,6 +18,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/python-3.12-blue" alt="Python 3.12">
   <img src="https://img.shields.io/badge/status-early-orange" alt="Status: early">
+</p>
+
+<p align="center">
+  <a href="https://github.com/ennajari/Snitch/blob/master/assets/5-snitch-teaser.mp4">
+    <img src="https://raw.githubusercontent.com/ennajari/Snitch/master/assets/4-snitch-teaser-poster.png" width="640" alt="Snitch teaser video: your AI coding agent is lying to you">
+  </a>
+  <br><sub>Watch the 83-second teaser: how Snitch catches an agent that games its tests.</sub>
 </p>
 
 <p align="center">
