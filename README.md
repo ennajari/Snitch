@@ -234,7 +234,7 @@ Output: `events`.
 ```yaml
 repos:
   - repo: https://github.com/ennajari/snitch
-    rev: v0.3.1
+    rev: v0.4.0
     hooks:
       - id: snitch
 ```
@@ -348,7 +348,7 @@ If you use Snitch or TemptationBench in your work, please cite it
   author  = {Ennajari, Abdellah},
   title   = {Snitch: an integrity layer for AI coding agents, and TemptationBench},
   year    = {2026},
-  version = {0.3.1},
+  version = {0.4.0},
   url     = {https://github.com/ennajari/Snitch}
 }
 ```
