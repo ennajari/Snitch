@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "coverage_threshold_lowered",
+    "severity": "high",
+    "file": "package.json",
+    "line_start": 1,
+    "line_end": 1,
+    "before": "global.lines=90",
+    "after": "removed",
+    "detector": "rule"
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "name": "app",
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "coverageThreshold": {
+      "global": {
+        "lines": 90
+      }
+    }
+  }
+}
