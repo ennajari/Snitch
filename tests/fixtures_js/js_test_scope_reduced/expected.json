@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "test_scope_reduced",
+    "severity": "medium",
+    "file": "calc.test.ts",
+    "line_start": 3,
+    "line_end": 5,
+    "before": "for (let i = 0; i < 20000; i++) {\n    expect(add(i, 0)).toBe(i);\n  }",
+    "after": "for (let i = 0; i < 100; i++) {\n    expect(add(i, 0)).toBe(i);\n  }",
+    "detector": "ast"
+  }
+]

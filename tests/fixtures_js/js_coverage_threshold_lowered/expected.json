@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "coverage_threshold_lowered",
+    "severity": "high",
+    "file": "jest.config.json",
+    "line_start": 2,
+    "line_end": 2,
+    "before": "global.statements=80",
+    "after": "global.statements=50",
+    "detector": "rule"
+  }
+]

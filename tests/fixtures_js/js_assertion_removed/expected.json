@@ -1,0 +1,13 @@
+[
+  {
+    "family": "tampering",
+    "pattern": "assertion_removed",
+    "severity": "high",
+    "file": "calc.test.ts",
+    "line_start": 2,
+    "line_end": 4,
+    "before": "expect(add(-1, 1)).toBe(0)",
+    "after": null,
+    "detector": "ast"
+  }
+]

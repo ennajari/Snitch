@@ -1,0 +1,13 @@
+[
+  {
+    "family": "faking",
+    "pattern": "mock_code_under_test",
+    "severity": "high",
+    "file": "calc.test.ts",
+    "line_start": 3,
+    "line_end": 3,
+    "before": null,
+    "after": "vi.mock(\"./calc\")",
+    "detector": "ast"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "family": "evasion",
+    "pattern": "test_focused",
+    "severity": "medium",
+    "file": "calc.test.ts",
+    "line_start": 2,
+    "line_end": 2,
+    "before": null,
+    "after": "only",
+    "detector": "inventory"
+  }
+]
