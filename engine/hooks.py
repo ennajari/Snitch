@@ -23,6 +23,7 @@ from typing import Any
 from engine.astdiff.diff import _is_test_file, enclosing_test, python_file_patterns
 from engine.detect import run_detectors
 from engine.inventory.collect import find_python
+from engine.jsdiff.parse import enclosing_test_js, is_js_test_file
 from engine.ledger import Ledger
 from engine.models import SnitchEvent
 from engine.policy import POLICY
@@ -224,7 +225,7 @@ def _session_events(
                     python=find_python(root),
                 )
                 found = {
-                    e.id: enclosing_test(current / e.file, e.line_start) for e in events
+                    e.id: _enclosing(current / e.file, e.line_start) for e in events
                 }
             for warning in warnings:
                 print(f"snitch: {warning}", file=sys.stderr)
@@ -372,7 +373,7 @@ def stop(payload: dict[str, Any], data_dir: Path) -> str | None:
         e.id: _mentions(
             message,
             e.file,
-            enclosing_test(root / e.file, e.line_start) if root else None,
+            _enclosing(root / e.file, e.line_start) if root else None,
         )
         for e in unresolved
     }
@@ -517,6 +518,13 @@ def _guard(path: Path, root: Path, data_dir: Path) -> str | None:
     return None
 
 
+def _enclosing(path: Path, line: int) -> str | None:
+    """The test around `line`, Python or JS/TS, for escalate/disclosure matching."""
+    if path.suffix == ".py":
+        return enclosing_test(path, line)
+    return enclosing_test_js(path, line)
+
+
 # programs that write, delete or replace their path arguments; COPIERS only the last one
 WRITERS = {"rm", "mv", "tee", "truncate", "chmod", "unlink"}
 COPIERS = {"cp", "ln", "install"}
@@ -561,9 +569,10 @@ def _bash_problem(command: str, cwd: Path, root: Path, frozen: list[str]) -> str
             continue
         for word in words[1:]:
             target = Path(word)
-            is_test = target.suffix == ".py" and _is_test_file(
-                target, python_file_patterns(root)
-            )
+            is_test = (
+                target.suffix == ".py"
+                and _is_test_file(target, python_file_patterns(root))
+            ) or is_js_test_file(target)
             if not word.startswith("-") and (
                 is_test or _is_frozen(_repo_path(root, cwd / target), frozen)
             ):
